@@ -36,6 +36,8 @@ flink-pipeline/target/
 *.class
 # Python
 generator/.venv/
+ingestion/.venv/
+**/.venv/
 **/__pycache__/
 *.pyc
 .pytest_cache/
@@ -44,6 +46,8 @@ generator/.venv/
 
 # === v3.0 자율주행 데이터셋 (재배포 금지 — 비상업 라이선스) ===
 # nuScenes 원본/변환 산출물은 레포에 커밋하지 않는다. docs/data-design-v3.md §12 참고.
+# nuScenes 원본 + 변환 산출물(MCAP/rrd)
 data/
 *.mcap
+*.rrd
 nuscenes/

@@ -6,8 +6,8 @@
 
 | 항목 | 값 |
 |---|---|
-| Status | Draft (설계 확정, 구현 착수 전) |
-| 작성일 | 2026-08-22 |
+| Status | P1 검증 완료 (미해결 5건 중 3건 해소, §14) |
+| 작성일 | 2026-08-22 (P1 실측 반영: 같은 날) |
 | 대체 대상 | `docs/sdd.md` §6.1–6.8 (OBD 텔레메트리 기준) |
 | 도메인 전환 | 차량 OBD fleet 텔레메트리 → **자율주행 멀티모달 센서 플랫폼** |
 
@@ -155,6 +155,7 @@ v2.0의 단일 `telemetry-event.avsc`(OBD 11필드)를 계층별 3종으로 분�
 | `checksum` | string | NOT NULL | 무결성 검증(sha256) |
 | `sample_count` | int | > 0 | 포함 샘플 수 |
 | `mcap_schema_version` | string | NOT NULL | MCAP 내장 스키마 버전 |
+| `calibration` | map | NOT NULL | **채널별 센서 외부/내부 파라미터.** 없으면 MCAP만으로 3D 재생 불가 — P1에서 발견해 추가(§14.3) |
 
 ---
 
@@ -294,11 +295,11 @@ v2.0은 `event_time` + `ingest_time` 2종이었다. 멀티모달에서는 **센�
 **변환에 필요한 것**: 4개 지역(boston-seaport, singapore-*)별 **고정 기준 원점(lat/lon)**.
 경로는 `WGS84 → ECEF → 로컬 ENU`의 역변환이다.
 
-> ⚠️ **미해결 리스크(R-V3-1)**: 커뮤니티 보고에 따르면 싱가포르는 EPSG:4326→EPSG:3857 변환 후
-> 지도 원점 오프셋 적용으로 정합되지만, **보스턴은 원점 좌표에 추가로 1.35× 스케일링이 필요**하다고 한다.
-> 이 값은 공식 문서가 아니라 포럼 보고이므로 **구현 단계에서 실측 검증이 필요**하다
-> ([nuScenes 포럼 — Lon/Lat of origin points](https://forum.nuscenes.org/t/lon-lat-of-origin-points/163)).
-> 검증 실패 시 대안: 지도를 쓰지 않고 **ENU 평면 좌표를 그대로 시각화**(Rerun은 지원, Kibana Maps는 불가).
+> ✅ **P1에서 해소됨(R-V3-1).** 원점은 포럼 추정이 아니라 `nuscenes-devkit`
+> `map_expansion/map_api.py` 45–49행의 **공식 문서화 값**이었다. 그리고 "보스턴 1.35× 스케일링"은
+> **Web Mercator 축척계수 `1/cos(42.34°) = 1.3528`** 이었다 — 로컬 접평면/대권 방식으로 직접
+> 변환하면 어떤 보정 상수도 필요 없다. 왕복 무손실·지도 래스터 정합·거리 오차 ≤0.014%로 검증했다.
+> 상세는 §14.1, 구현은 [`ingestion/fleetsentinel_ingest/geo.py`](../ingestion/fleetsentinel_ingest/geo.py).
 
 v2.0 §6.6의 **lat/lon 순서 규약은 그대로 유지**한다 — BigQuery/GeoJSON = `[lon, lat]`, ES 문자열 = `"lat,lon"`.
 
@@ -509,17 +510,106 @@ v2.0의 DLQ 4분류(`PARSE_FAILURE` / `SCHEMA_VALIDATION_FAILURE` / `BUSINESS_RU
 
 ---
 
-## 14. 미해결 항목
+## 14. 미해결 항목 — P1 실측 검증 결과 (2026-08-22)
 
-| ID | 항목 | 영향 | 해소 시점 |
+nuScenes mini(4.17GB) + CAN bus 확장(745MB)을 실제로 받아 검증했다. 산출물·절차는
+[`ingestion/README.md`](../ingestion/README.md).
+
+| ID | 항목 | 판정 | 근거 |
 |---|---|---|---|
-| **R-V3-1** | ENU→WGS84 원점값 — 보스턴 1.35× 스케일링이 포럼 보고 수준 | Kibana Maps 지도 표시 | P1 구현 시 실측 검증. 실패 시 Rerun ENU 평면 시각화로 대체 |
-| **R-V3-2** | `scene.description` 자유 텍스트에서 `time_of_day`/`weather` 파싱 커버리지 미확인 | 시나리오 마이닝 술어 품질 | P1에서 mini 10 scene으로 파싱률 측정 |
-| **R-V3-3** | CAN bus 확장은 별도 다운로드 — mini 포함 여부 미확인 | 조향각·IMU 필드 가용성 | P1에서 확인. 미포함 시 신호 계층은 `ego_pose`만으로 축소 |
-| **R-V3-4** | 원시 MCAP 전량 보존 시 로컬 디스크 압박 (full 550GB) | 로컬 개발 | mini(4.17GB)로 개발, full은 선택 scene만 |
-| **R-V3-5** | 재생기 N대 배분 시 `vehicle_id`가 실제 차량이 아님 | 서사 정직성 | 문서에 "재생 배분 가상 차량"으로 명시 |
+| **R-V3-1** | ENU→WGS84 원점값, 보스턴 1.35× 스케일링 | ✅ **해소** | 아래 §14.1 |
+| **R-V3-2** | `scene.description` 파싱 커버리지 | ⚠️ **부분 해소** | 아래 §14.2 |
+| **R-V3-3** | CAN bus 확장 가용성 | ✅ **해소** | 아래 §14.3 |
+| R-V3-4 | 원시 MCAP 보존 시 디스크 압박 | 📌 **정량화됨** | mini 원본 9.0GB → MCAP 3장면 146MB(장면당 ~49MB). full 1000장면 환산 ~49GB |
+| R-V3-5 | 재생 배분 `vehicle_id`가 실차량 아님 | 📌 **문서화로 확정** | `AV-000N` 접두어 + 스키마 doc에 "재생 배분 가상 차량" 명시 |
 
----
+### 14.1 R-V3-1 — "보스턴 1.35×"의 정체는 Web Mercator 축척계수였다
+
+원점은 포럼 추정이 아니라 **공식 문서화 값**이었다 — `nuscenes-devkit`
+`map_expansion/map_api.py` 45–49행에 4개 지도의 남서쪽 모서리 좌표가 기재돼 있다.
+
+수수께끼였던 1.35배는 **Web Mercator(EPSG:3857) 축척계수 `1/cos(lat)`** 이다.
+
+| 지역 | 원점 위도 | `1/cos(lat)` |
+|---|---|---|
+| boston-seaport | 42.3368° | **1.3528** ← 포럼 보고 "1.35" |
+| singapore 3곳 | ~1.29° | 1.0003 (사실상 1) |
+
+싱가포르는 적도 근처라 보정이 필요 없었고 보스턴만 필요했던 것이다. **로컬 접평면 또는
+대권 방식으로 직접 변환하면 이 보정 자체가 불필요하다.** 구현은
+[`ingestion/fleetsentinel_ingest/geo.py`](../ingestion/fleetsentinel_ingest/geo.py).
+
+검증 3종 통과:
+
+1. **왕복 무손실** — ENU→WGS84→ENU 최대 오차 1e-6 mm
+2. **지도 래스터 대조** — 10/10 장면의 `ego_pose`가 지도 PNG 범위(10px/m) 안. 원점·스케일 정합 확인
+3. **거리 보존** — haversine 대 ENU 거리 오차 ≤ 0.014%
+
+추가로 `nuscenes2mcap`의 대권 방식 구현과 교차 대조해 **최대 편차 36cm**(싱가포르 2cm)로
+일치했다. 두 독립 구현이 서브미터로 수렴하므로 원점·방법 모두 타당하다.
+
+### 14.2 R-V3-2 — 태그는 100% 뽑히지만 `time_of_day`·`weather`는 약하다
+
+mini 10장면 전부에서 태그가 1개 이상 추출됐다. 그러나 설계가 전제한 두 축은 약하다.
+
+| 태그 | 10장면 중 | 비고 |
+|---|---|---|
+| peds | 8 | 강함 |
+| cyclist / intersection / bus | 5 | 강함 |
+| truck | 4 | 쓸만함 |
+| night / construction / parked | 3 | 쓸만함 |
+| turn / rain / hard_light | 1 | **희소** |
+
+**두 가지 함정을 확정한다.**
+
+- **`day`는 명시되지 않는다.** "Night"은 3건 기재되지만 "day/daytime"은 **0건**이다.
+  즉 주간은 *"night이 없으므로 day"* 라는 **부정 추론**이며, 카탈로그에 그렇게 기록해야 한다.
+- **`after rain` ≠ 활성 강우.** scene-1094는 "Night, after rain"으로, 노면은 젖었지만
+  비는 오지 않는다. 하나로 뭉치면 안 되고 정규식도 **부정 후방탐색**이 필요하다
+  (`(?<!after\s)rain` — 전방탐색으로 짜면 "after rain"을 활성 강우로 오분류한다. P1에서 실제로 겪음).
+
+**귀결**: `weather` 축은 mini 규모에서 사실상 쓸 수 없다(활성 강우 1/10). 시나리오 마이닝의
+기상 축은 ① full 데이터셋에서 재측정하거나 ② CARLA 보강 생성(Phase 8)으로 채워야 한다.
+**§5.3 폐루프의 "부족분을 시뮬로 보강"이 가설이 아니라 실측으로 확인된 필요가 됐다.**
+
+### 14.3 R-V3-3 — CAN은 mini에 없지만 공개 다운로드로 확보된다
+
+mini 아카이브에 `can_bus/`는 **없다**. 다만 별도 확장이 **인증 없이 745MB로 공개**돼 있어
+받으면 신호 계층이 온전해진다. 실측 채널(scene-0061 기준):
+
+| 채널 | 주기 | 필드 |
+|---|---|---|
+| `ms_imu` | 99.2Hz | `linear_accel`, `q`, `rotation_rate` |
+| `steeranglefeedback` | 93.9Hz | `value` (rad) |
+| `pose` | 49.0Hz | `pos`, `vel`, `accel`, `orientation`, `rotation_rate` |
+| `vehicle_monitor` | 2.0Hz | `vehicle_speed`, `yaw_rate`, `steering`, `brake`, `throttle`, `gear_position`, `rear_left_rpm`, `rear_right_rpm`, `battery_level`, 방향지시등 |
+
+§4.1의 `steering_rad` 범위 **[-7.7, 6.3]은 전체 데이터셋 기준**이다(scene-0061 실측은
+[0.030, 3.065]). 검증 규칙은 전역 범위를 쓴다.
+
+**설계 수정 1건** — §4.1은 신호를 `ego_pose` 기준으로 적었으나, 키프레임만 쓰면 **2Hz**로
+너무 성기다. `sample_data` 체인 전체를 훑어 **실측 19.9~20.0Hz**로 올렸다.
+
+**설계 누락 1건 발견 — 센서 캘리브레이션.** §4.3 `log-segment`에 캘리브레이션이 없었는데,
+이게 없으면 **MCAP만으로 3D 재생이 불가능**하다(LiDAR는 센서 프레임, 인지 박스는 글로벌
+프레임이라 정렬되지 않는다). `/tf/calibration` 채널을 추가해 MCAP을 자체충족적으로 만들었다.
+
+### 14.4 P1 실측으로 확정된 수치
+
+| 항목 | 설계 문서 | P1 실측 |
+|---|---|---|
+| 장면 길이 | 20초 | 19.1~20.0초 ✅ |
+| 키프레임 | 2Hz | 1.98Hz ✅ |
+| 센서 | 카메라6+LiDAR1+레이더5 | 12채널 확인 ✅ |
+| visibility | 4단계 | `v0-40`/`v40-60`/`v60-80`/`v80-100` ✅ |
+| 라이선스 | 비상업 | Motional 비상업 약관 확인 ✅ |
+| **`num_lidar_pts`=0 비율** | (미상) | **23.1%** (18,538건 중 4,278건) |
+
+마지막 항목이 §11 품질 규칙의 무게를 바꾼다. **라벨의 약 1/4이 LiDAR 관측 0**이므로,
+`low_confidence` 플래그는 예외 처리가 아니라 **주요 큐레이션 축**이다.
+
+기하 정합도 교차 확인됐다 — LiDAR 사거리 101.1m(HDL32E 사양 부합), `num_lidar_pts`=0
+객체의 평균 거리가 관측된 객체보다 멀다(46.3m 대 37.1m). 좌표 처리가 물리적으로 일관된다.
 
 ## 15. 참고 자료
 
@@ -532,4 +622,5 @@ v2.0의 DLQ 4분류(`PARSE_FAILURE` / `SCHEMA_VALIDATION_FAILURE` / `BUSINESS_RU
 - [MCAP 포맷](https://foxglove.dev/product/mcap) · [MCAP as the ROS 2 Default Bag Format](https://foxglove.dev/blog/mcap-as-the-ros2-default-bag-format)
 - [Rerun (MIT/Apache-2.0)](https://github.com/rerun-io/rerun) · [Rerun nuScenes 예제](https://rerun.io/examples/robotics/nuscenes_dataset)
 - [Apache Iceberg — Partitioning](https://iceberg.apache.org/docs/latest/partitioning/) · [Flink Connector](https://iceberg.apache.org/docs/latest/flink-connector/)
+- [nuScenes 스키마 정의(devkit)](https://github.com/nutonomy/nuscenes-devkit/blob/master/docs/schema_nuscenes.md) · [map_api.py 원점 좌표](https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/map_expansion/map_api.py)
 - [CARLA ROS Scenario Runner](https://carla.readthedocs.io/projects/ros-bridge/en/stable/carla_ros_scenario_runner/)
