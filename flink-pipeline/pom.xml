@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.fleetsentinel</groupId>
+  <artifactId>flink-pipeline</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <!-- 17, not 21: the compose Flink image is flink:2.0.0-java17 (docker exec ... flink run
+         rejects newer class file versions — UnsupportedClassVersionError). No JDK 21-only
+         language features are used, so targeting 17 is a pure bytecode-version change. -->
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <flink.version>2.0.0</flink.version>
+    <flink.kafka.connector.version>4.0.1-2.0</flink.kafka.connector.version>
+    <flink.es.connector.version>4.0.0-2.0</flink.es.connector.version>
+    <iceberg.version>1.11.0</iceberg.version>
+    <hadoop.client.version>3.5.0</hadoop.client.version>
+    <avro.version>1.11.4</avro.version>
+    <junit.version>5.10.2</junit.version>
+    <slf4j.version>2.0.13</slf4j.version>
+  </properties>
+
+  <dependencies>
+    <!-- Flink DataStream API. provided: bundled inside the cluster's flink-dist-2.0.0.jar
+         (infra/docker-compose.yml's flink:2.0.0-java17 image /opt/flink/lib) — verified present. -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-streaming-java</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-clients</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-avro</artifactId>
+      <version>${flink.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-connector-kafka</artifactId>
+      <version>${flink.kafka.connector.version}</version>
+    </dependency>
+    <!-- RocksDB state backend (G003 review leftover): keyed state (dedup TTL) durable + incremental.
+         provided: org/apache/flink/state/rocksdb is bundled inside the cluster's flink-dist-2.0.0.jar
+         (Flink 2.0 folded the RocksDB backend into flink-dist) — verified present. -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-statebackend-rocksdb</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- Explicit compile-scope kafka-clients: ProducerRecord used directly in DlqAvroSerializationSchema
+         (flink-connector-kafka's own kafka-clients dependency does not propagate transitively here). -->
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+      <version>3.9.1</version>
+    </dependency>
+    <!-- RowData/GenericRowData/StringData/TimestampData for the Iceberg RowData sink mapping.
+         provided: bundled in the cluster's flink-table-api-java-uber-2.0.0.jar — verified present. -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-table-common</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- Iceberg's IcebergFilesCommitterFactory needs flink-table-runtime's internal type utils
+         (e.g. SortedMapTypeInfo) at runtime — NoClassDefFoundError without it.
+         provided: bundled in the cluster's flink-table-runtime-2.0.0.jar — verified present. -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-table-runtime</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- Iceberg sinks: Bronze/Silver tables via REST catalog on S3-compatible storage (MinIO). -->
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-flink-runtime-2.0</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-aws-bundle</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <!-- CatalogLoader.rest(...) takes a Hadoop Configuration; this shaded, dependency-light
+         "client-api" artifact supplies just that class without pulling the full Hadoop stack. -->
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client-api</artifactId>
+      <version>${hadoop.client.version}</version>
+    </dependency>
+    <!-- hadoop-client-api's shaded classes reference woodstox/etc. bundled only in the
+         matching hadoop-client-runtime shaded jar (NoClassDefFoundError otherwise at runtime). -->
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client-runtime</artifactId>
+      <version>${hadoop.client.version}</version>
+    </dependency>
+
+    <!-- Elasticsearch sink (ES8 async client-based connector). -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-connector-elasticsearch8</artifactId>
+      <version>${flink.es.connector.version}</version>
+    </dependency>
+
+    <!-- Avro (schema-frozen SpecificRecord codegen + runtime) -->
+    <dependency>
+      <groupId>org.apache.avro</groupId>
+      <artifactId>avro</artifactId>
+      <version>${avro.version}</version>
+    </dependency>
+
+    <!-- provided: bundled in the cluster's flink-dist-2.0.0.jar — verified present. -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Test -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-test-utils</artifactId>
+      <version>${flink.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-runtime</artifactId>
+      <version>${flink.version}</version>
+      <classifier>tests</classifier>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>${slf4j.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>17</release>
+        </configuration>
+      </plugin>
+
+      <!-- Generate SpecificRecord classes from the frozen, shared Avro schemas. -->
+      <plugin>
+        <groupId>org.apache.avro</groupId>
+        <artifactId>avro-maven-plugin</artifactId>
+        <version>${avro.version}</version>
+        <executions>
+          <execution>
+            <id>generate-avro-specific-records</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>schema</goal>
+            </goals>
+            <configuration>
+              <sourceDirectory>${project.basedir}/../schemas</sourceDirectory>
+              <outputDirectory>${project.build.directory}/generated-sources/avro</outputDirectory>
+              <stringType>String</stringType>
+              <fieldVisibility>PRIVATE</fieldVisibility>
+              <createSetters>true</createSetters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Bundles infra/seed/fleet.csv onto the classpath (target/classes/fleet.csv) so
+           EnrichFunction.open() can preload it without an in-band broadcast join. The seed
+           file stays the single source of truth; this only copies it at build time. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>copy-fleet-csv-to-classpath</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../infra/seed</directory>
+                  <includes>
+                    <include>fleet.csv</include>
+                  </includes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <!-- Iceberg's DataFile Kryo-copies (chained-operator record copying) reflect into
+               java.nio.ByteBuffer's private fields; JDK 17+'s module system blocks that without
+               this opt-in (InaccessibleObjectException otherwise). -->
+          <argLine>--add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+        </configuration>
+      </plugin>
+
+      <!-- Sink integration tests (*IT.java) exercise the real local compose stack (Kafka,
+           Iceberg REST/MinIO, Elasticsearch); failsafe runs them in integration-test/verify so
+           `mvn verify` fails loudly instead of silently skipping them like surefire would. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <argLine>--add-opens java.base/java.nio=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- G007: fat jar for real cluster submission (docker compose flink run). Bundles
+           everything not already present in the cluster's /opt/flink/lib (Kafka/ES8 connectors,
+           Iceberg + Hadoop client + AWS bundle, Avro). ServicesResourceTransformer merges
+           META-INF/services SPI files (Flink connector factories, Iceberg FileIO/Catalog SPI,
+           Hadoop FileSystem SPI) instead of letting the shade plugin keep only the first one it
+           sees, which would silently drop factories. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <finalName>fleetsentinel-flink-pipeline</finalName>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>io.fleetsentinel.pipeline.StreamJob</mainClass>
+                </transformer>
+              </transformers>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

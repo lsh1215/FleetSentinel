@@ -1,0 +1,50 @@
+{
+  "type": "record",
+  "name": "DlqEnvelope",
+  "namespace": "io.fleetsentinel.telemetry.v1",
+  "doc": "Core Stream Job DLQ 격리 봉투 스키마(SDD §6.7). 원본 페이로드를 무손실 보존하고 실패 사유를 분류해 GCS dlq 싱크·재처리 CLI가 소비한다.",
+  "fields": [
+    {
+      "name": "original_payload",
+      "type": "bytes",
+      "doc": "실패한 원본 메시지 바이트(Avro 디코드 실패 시에도 그대로 보존 — 무손실 원칙 G-1). 재처리 CLI가 수정 후 재발행 시 이 값을 기반으로 신규 telemetry-event.avsc 레코드를 재구성한다."
+    },
+    {
+      "name": "error_class",
+      "type": {
+        "type": "enum",
+        "name": "DlqErrorClass",
+        "symbols": ["PARSE_FAILURE", "SCHEMA_VALIDATION_FAILURE", "BUSINESS_RULE_FAILURE", "SINK_WRITE_FAILURE"]
+      },
+      "doc": "DLQ 분류 4종(SDD §6.7): PARSE_FAILURE=Avro 디코드 실패, SCHEMA_VALIDATION_FAILURE=필드 범위·필수값 위반, BUSINESS_RULE_FAILURE=미등록 vehicle_id 등 업무 규칙 위반, SINK_WRITE_FAILURE=Iceberg/ES 싱크 write 재시도 상한 초과(GCS dlq/es/ — pipeline_step으로 싱크 식별)."
+    },
+    {
+      "name": "error_detail",
+      "type": "string",
+      "doc": "실패 사유 상세 메시지(예외 스택·검증 실패 필드명 등). 운영자 재처리 판단 근거."
+    },
+    {
+      "name": "source_subscription",
+      "type": "string",
+      "doc": "메시지를 수신한 Kafka 소스 식별자(consumer group/topic). 재발행 경로 추적용."
+    },
+    {
+      "name": "pipeline_step",
+      "type": "string",
+      "doc": "실패가 발생한 Core Stream Job 처리 단계 식별자(예: decode, schema-validate, enrich, sink-iceberg/sink-es). 관측성(§10.2) 상관관계 키."
+    },
+    {
+      "name": "processing_time",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-micros"
+      },
+      "doc": "DLQ 격리가 발생한 처리 시각(processing-time), UTC epoch 마이크로초. event_time(원본 이벤트 발생 시각)과 구분되는 관측용 타임스탬프."
+    },
+    {
+      "name": "attempt",
+      "type": "int",
+      "doc": "해당 메시지의 누적 처리(재시도) 시도 횟수, 1부터 시작. 재시도 상한 도달 여부 판단에 사용(SDD §5.2 ES 재시도 상한과 유사한 bound 원칙)."
+    }
+  ]
+}
