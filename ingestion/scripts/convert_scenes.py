@@ -32,6 +32,11 @@ def main() -> int:
     ap.add_argument("--scenes", type=int, default=0, help="변환할 장면 수 (0=전체)")
     ap.add_argument("--vehicles", type=int, default=4, help="배분할 가상 차량 수")
     ap.add_argument("--no-raw", action="store_true", help="원시 센서 제외(경량만)")
+    ap.add_argument(
+        "--no-sweeps",
+        action="store_true",
+        help="원시에서 스윕(비키프레임) 제외 — 빠른 검증용. 무손실 계약 위반이므로 기본은 포함",
+    )
     args = ap.parse_args()
 
     nusc = NuScenes(version=args.version, dataroot=str(args.dataroot), verbose=False)
@@ -50,7 +55,9 @@ def main() -> int:
 
     for i, scene in enumerate(scenes):
         vehicle_id = f"AV-{(i % args.vehicles) + 1:04d}"
-        extract = extract_scene(nusc, scene, vehicle_id=vehicle_id, can_api=can)
+        extract = extract_scene(
+            nusc, scene, vehicle_id=vehicle_id, can_api=can, include_sweeps=not args.no_sweeps
+        )
         out_path = args.out / f"{scene['name']}.mcap"
         meta = write_scene_mcap(
             extract, dataroot=args.dataroot, out_path=out_path, include_raw=not args.no_raw
@@ -60,7 +67,8 @@ def main() -> int:
         print(
             f"  [{i+1}/{len(scenes)}] {scene['name']} → {out_path.name}  "
             f"{mb:7.1f}MB  veh={vehicle_id}  "
-            f"신호 {meta['n_signals']:>3} · 인지 {meta['n_perception']:>4} · 원시 {meta['n_raw']:>4}"
+            f"신호 {meta['n_signals']:>4} · 인지 {meta['n_perception']:>4} · "
+            f"원시 {meta['n_raw']:>5} (키프레임 {meta['n_raw_keyframe']}, 스윕 {meta['n_raw_sweep']})"
         )
 
     manifest_path = args.out / "manifest.json"

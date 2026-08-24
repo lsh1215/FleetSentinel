@@ -28,11 +28,11 @@ All figures below are **measured**, not estimated (nuScenes mini, 10 scenes, 196
 
 | Layer | Content | Messages/sec | Bandwidth |
 |---|---|---|---|
-| ① **Signals** | CAN bus, IMU, steering, ego pose | **1,466** | 230 KB/s |
+| ① **Signals** | CAN bus, IMU, steering, ego pose | **1,295** | 432 KB/s |
 | ② **Perception** | 3D object boxes, tracks, classes | 2.1 | 39 KB/s |
 | ③ **Raw sensors** | 6 cameras · LiDAR · 5 radars | 159 | **27.15 MB/s** |
 
-**Bandwidth differs by 99×, yet signals carry 9× more messages.** Any attempt to push both
+**Bandwidth differs by 58×, yet signals carry 8× more messages.** Any attempt to push both
 through one pipeline collapses. And a single vehicle's 27.15 MB/s exceeds practical LTE
 throughput (~12.5 MB/s) — **not even one vehicle can stream continuously.**
 
@@ -80,8 +80,8 @@ The two rejoin in the clip catalog.
 |---|---|
 | 99× bandwidth asymmetry | **Claim-Check** — references on the bus, payloads in storage |
 | Not even one vehicle can stream continuously | **Triggered clips** — onboard ring buffer, upload ±20s around events |
-| 1,466 tiny messages/sec | **100ms window batching** — 5,000 msg/s at 500 vehicles |
-| Sensor rates span 955Hz–2Hz | **Three timestamps** + keyframe (2Hz) synchronization anchor |
+| 1,295 tiny messages/sec | **100ms window batching** — 4,925 msg/s at 500 vehicles (measured) |
+| Sensor rates span 937Hz–2Hz | **Three timestamps** + keyframe (2Hz) synchronization anchor |
 | Coordinates are not lat/lon | **Official-origin ENU→WGS84 conversion** |
 | Raw logs must replay standalone | **MCAP with embedded calibration** |
 | At-least-once ingest, zero-loss proof | **Four-stage exactly-once** + `event_id` set reconciliation |
@@ -134,7 +134,7 @@ Stated plainly. Full list in [SDD §4.2](docs/sdd.md).
 - **Not live monitoring.** nuScenes replay reproduces bandwidth, cadence, and format, but there is no real-vehicle integration.
 - **Infrastructure HA is out of scope.** A single-host 3-broker setup demonstrates broker-level failover only.
 - **No perception model.** Perception outputs come from nuScenes labels.
-- **MCAP sweep gap (open defect)** — the current converter stores keyframes only, omitting 86% of raw sensor data. Slated for P2.
+- **Radar payloads unparsed** — `.pcd` files are stored in MCAP but not decoded or visualized.
 
 ## Layout
 

@@ -81,6 +81,23 @@ class PerceptionRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ChannelSignal:
+    """① 신호 1건을 **채널 네이티브 주기 그대로** 담는다.
+
+    `SignalRecord`(ego_pose 시각에 CAN을 최근접 결합)는 조회 편의를 위한 파생형이고,
+    이쪽이 무손실 정본이다. 결합형만 쓰면 `zoesensors` 955Hz가 20Hz로 깎여
+    **98%가 버려진다** — 신호 계층에도 무손실 원칙이 적용돼야 한다.
+    """
+
+    event_id: str
+    vehicle_id: str
+    scene_id: str
+    channel: str
+    sensor_time: int
+    values: Dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class RawSample:
     """③ 원시 센서 1건 — MCAP에 바이너리로 실리는 대상."""
 
@@ -107,6 +124,75 @@ class SceneExtract:
     calibration: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     """채널별 센서 외부/내부 파라미터. 이게 없으면 MCAP만으로 3D 재생이 불가능하다
     (LiDAR는 센서 프레임, 3D 박스는 글로벌 프레임이라 정렬되지 않는다)."""
+
+
+# 신호 계층에 싣는 CAN 채널. 실측 주기는 docs/data-design-v3.md §3.1.
+NATIVE_CAN_CHANNELS = (
+    "zoesensors",           # ~955Hz — 페달·조향 원시 센서
+    "ms_imu",               # ~100Hz
+    "zoe_veh_info",         # ~100Hz
+    "steeranglefeedback",   # ~98Hz
+    "pose",                 # ~50Hz
+    "vehicle_monitor",      # ~2Hz
+)
+
+
+def extract_native_signals(
+    nusc: Any,
+    scene: Dict[str, Any],
+    vehicle_id: str,
+    can_api: Any = None,
+    ego_channel: str = "LIDAR_TOP",
+) -> List[ChannelSignal]:
+    """장면의 신호를 **채널 네이티브 주기 그대로** 뽑는다(무손실).
+
+    CAN이 없으면 `ego_pose`만 나온다. 결과는 `sensor_time` 오름차순이다.
+    """
+    scene_id = scene["token"]
+    location = nusc.get("log", scene["log_token"])["location"]
+    out: List[ChannelSignal] = []
+
+    if can_api is not None:
+        for channel in NATIVE_CAN_CHANNELS:
+            try:
+                messages = can_api.get_messages(scene["name"], channel)
+            except Exception:
+                continue  # 장면별 CAN 결손(공식 blacklist) — 무시하고 진행
+            for msg in messages:
+                values = {k: v for k, v in msg.items() if k != "utime"}
+                out.append(
+                    ChannelSignal(
+                        event_id=str(ULID()),
+                        vehicle_id=vehicle_id,
+                        scene_id=scene_id,
+                        channel=channel,
+                        sensor_time=int(msg["utime"]),
+                        values=values,
+                    )
+                )
+
+    for sd in _iter_sample_data(nusc, scene, ego_channel):
+        ego = nusc.get("ego_pose", sd["ego_pose_token"])
+        lat, lon = enu_to_wgs84(ego["translation"][0], ego["translation"][1], location)
+        out.append(
+            ChannelSignal(
+                event_id=str(ULID()),
+                vehicle_id=vehicle_id,
+                scene_id=scene_id,
+                channel="ego_pose",
+                sensor_time=int(ego["timestamp"]),
+                values={
+                    "translation": [float(v) for v in ego["translation"]],
+                    "rotation": [float(v) for v in ego["rotation"]],
+                    "lat": lat,
+                    "lon": lon,
+                    "location": location,
+                },
+            )
+        )
+
+    out.sort(key=lambda r: r.sensor_time)
+    return out
 
 
 class _NearestSeries:
@@ -145,11 +231,14 @@ def extract_scene(
     vehicle_id: str,
     can_api: Any = None,
     ego_channel: str = "LIDAR_TOP",
+    include_sweeps: bool = True,
 ) -> SceneExtract:
     """장면 하나를 3계층 레코드로 분해한다.
 
     :param vehicle_id: 재생기가 배분한 **가상** 차량 id (R-V3-5 — 실차량 아님)
     :param ego_channel: ego_pose를 샘플링할 기준 센서(LIDAR_TOP = 20Hz)
+    :param include_sweeps: 원시 센서에 스윕(비키프레임)을 포함할지. **기본 True**가
+        무손실 계약이다. False는 빠른 검증용 경량 모드이며 원시의 약 86%가 빠진다.
     """
     log = nusc.get("log", scene["log_token"])
     location = log["location"]
@@ -222,10 +311,14 @@ def extract_scene(
             )
         )
 
-    for sample in _iter_samples(nusc, scene):
-        # --- ③ 원시 센서: 이 키프레임에 걸린 전 채널 ---
-        for channel, sd_token in sample["data"].items():
-            sd = nusc.get("sample_data", sd_token)
+    # --- ③ 원시 센서: 전 채널의 sample_data 체인 전체.
+    # 키프레임만 담으면 sample_data의 15.5%, 바이트로는 13.6%만 남아 §9 무손실 원칙과
+    # 어긋난다(SDD L-10). 스윕(비키프레임)을 포함해야 원본 보존이 성립한다.
+    first_sample = nusc.get("sample", scene["first_sample_token"])
+    for channel in sorted(first_sample["data"]):
+        for sd in _iter_sample_data(nusc, scene, channel):
+            if not include_sweeps and not sd["is_key_frame"]:
+                continue
             if channel not in out.calibration:
                 cs = nusc.get("calibrated_sensor", sd["calibrated_sensor_token"])
                 out.calibration[channel] = {
@@ -248,6 +341,7 @@ def extract_scene(
                 )
             )
 
+    for sample in _iter_samples(nusc, scene):
         # --- ② 인지 산출: 이 키프레임의 3D 박스 ---
         for ann_token in sample["anns"]:
             ann = nusc.get("sample_annotation", ann_token)

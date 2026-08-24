@@ -7,6 +7,11 @@
   3. 메시지 수가 변환 매니페스트와 일치하는가
   4. 시간 범위로 **구간 랜덤 액세스**가 되는가 (MCAP 인덱스의 존재 이유)
   5. 원시 센서 페이로드가 실제 바이트인가 (JPEG 매직 등)
+  6. **무손실 계약** — 장면에 속한 sample_data 전량이 담겼는가 (SDD L-10 회귀 방지)
+
+6번은 `--dataroot`를 주면 실행된다. nuScenes DB에서 "장면에 속한 sample_data"의
+정본 정의(sample_token이 장면의 sample에 속하는 전체)를 뽑아 MCAP 메시지 수와 대조한다.
+키프레임만 담던 결함이 되살아나면 여기서 잡힌다.
 """
 
 from __future__ import annotations
@@ -31,10 +36,35 @@ def bad(msg: str) -> None:
     print(f"  \033[31mFAIL\033[0m {msg}")
 
 
+def canonical_raw_counts(dataroot: Path, version: str = "v1.0-mini") -> dict:
+    """nuScenes DB에서 장면별 정본 sample_data 수를 구한다."""
+    from nuscenes.nuscenes import NuScenes
+
+    nusc = NuScenes(version=version, dataroot=str(dataroot), verbose=False)
+    out = {}
+    for scene in nusc.scene:
+        tokens, tok = set(), scene["first_sample_token"]
+        while tok:
+            tokens.add(tok)
+            tok = nusc.get("sample", tok)["next"]
+        sds = [sd for sd in nusc.sample_data if sd["sample_token"] in tokens]
+        out[scene["name"]] = {
+            "total": len(sds),
+            "keyframe": sum(1 for sd in sds if sd["is_key_frame"]),
+            "sweep": sum(1 for sd in sds if not sd["is_key_frame"]),
+        }
+    return out
+
+
 def main() -> int:
     out_dir = Path(sys.argv[1])
+    dataroot = Path(sys.argv[2]) if len(sys.argv) > 2 else None
     manifest = json.loads((out_dir / "manifest.json").read_text())
-    by_name = {m["scene_name"]: m for m in manifest}
+
+    canonical = {}
+    if dataroot:
+        print("정본 sample_data 수 계산 중 (무손실 계약 검사)...")
+        canonical = canonical_raw_counts(dataroot)
 
     for meta in manifest:
         path = Path(meta["blob_uri"])
@@ -104,6 +134,20 @@ def main() -> int:
                     ok(f"{cam_topic} 페이로드 JPEG 매직 확인 ({len(first.data):,}B)")
                 else:
                     bad(f"{cam_topic} JPEG 매직 불일치")
+
+            # 6) 무손실 계약 — 정본 sample_data 전량이 담겼는가
+            ref = canonical.get(meta["scene_name"])
+            if ref:
+                if n_raw == ref["total"]:
+                    ok(
+                        f"무손실 계약: 원시 {n_raw}건 = 정본 {ref['total']}건 "
+                        f"(키프레임 {ref['keyframe']} + 스윕 {ref['sweep']})"
+                    )
+                else:
+                    bad(
+                        f"무손실 계약 위반: MCAP {n_raw}건 vs 정본 {ref['total']}건 "
+                        f"({100*n_raw/ref['total']:.1f}%) — 스윕 누락 회귀 의심"
+                    )
 
             # 신호 1건 디코드 — 좌표 파생 확인
             sig = next((m for _, c, m in reader.iter_messages(topics=["/vehicle/signal"])), None)

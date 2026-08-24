@@ -227,6 +227,8 @@ def write_scene_mcap(
         "n_signals": len(extract.signals),
         "n_perception": len(extract.perception),
         "n_raw": len(extract.raw),
+        "n_raw_keyframe": sum(1 for r in extract.raw if r.is_key_frame),
+        "n_raw_sweep": sum(1 for r in extract.raw if not r.is_key_frame),
         "raw_bytes": raw_bytes,
         "location": extract.location,
         "description": extract.description,
