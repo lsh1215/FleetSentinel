@@ -2,7 +2,7 @@
 """MCAP → Rerun 재생 (P1 최종 게이트).
 
 **MCAP 파일만 읽어서** 재생한다 — nuScenes devkit이나 원본 데이터셋을 참조하지 않는다.
-이게 성립해야 "Bronze MCAP = 재생 가능한 무손실 원본"(docs/data-design-v3.md §9.1)이
+이게 성립해야 "Bronze MCAP = 재생 가능한 무손실 원본"(docs/data-design.md §9.1)이
 말이 된다.
 
 재생 구성:

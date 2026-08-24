@@ -17,43 +17,30 @@ In one sentence:
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
 > **Status:** 🚧 **Data characterization stage** — measured what data arrives, at what scale and in what format. The ingest/ETL pipeline is not yet designed.
-> **Docs (Korean):** [System Design Document](docs/sdd.md) · [Data Design](docs/data-design-v3.md) · [Provisional pipeline notes](docs/pipeline-notes-provisional.md) · [Runbook](RUN.md)
+> **Docs (Korean):** [System Design Document](docs/sdd.md) · [Data Design](docs/data-design.md) · [Provisional pipeline notes](docs/pipeline-notes-provisional.md) · [Runbook](RUN.md)
 
 > **Motivation (Prior Art).** A personal extension of **[AutoNotify](https://github.com/Qualcomm-Capstone)**, a Qualcomm-sponsored capstone on on-device real-time speeding detection. Feedback from a Qualcomm engineer at the final presentation — _"Catching events one vehicle at a time on the edge is solid work. But scale it to a real fleet and the bottleneck moves off the model and onto the ingest, storage, and refinement pipeline"_ — prompted generalizing single-vehicle event handling into a **fleet-scale multimodal sensor platform**. (Qualcomm was not involved in this extension.)
 
 ## The Problem
 
-Data from a single autonomous vehicle splits into **three layers with fundamentally different characteristics.**
-All figures below are **measured**, not estimated (nuScenes mini, 10 scenes, 196.5 seconds, full census).
+Data from a single autonomous vehicle splits into **three layers with fundamentally different
+characteristics** — **signals** (CAN, IMU, steering), **perception** (3D boxes, tracks), and
+**raw sensors** (6 cameras, LiDAR, 5 radars).
 
-| Layer | Content | Messages/sec | Bandwidth |
-|---|---|---|---|
-| ① **Signals** | CAN bus, IMU, steering, ego pose | **1,295** | 432 KB/s |
-| ② **Perception** | 3D object boxes, tracks, classes | 2.1 | 39 KB/s |
-| ③ **Raw sensors** | 6 cameras · LiDAR · 5 radars | 159 | **27.15 MB/s** |
+Two facts determine the entire architecture.
 
-**Bandwidth differs by 58×, yet signals carry 8× more messages.** Any attempt to push both
-through one pipeline collapses. And a single vehicle's 27.15 MB/s exceeds practical LTE
-throughput (~12.5 MB/s) — **not even one vehicle can stream continuously.**
+1. **Raw data is 58× heavier in bandwidth, yet signals carry 8× more messages.** Any attempt to
+   push both through one pipeline collapses.
+2. **One vehicle's raw output exceeds practical LTE throughput.** Not even a single vehicle can
+   stream continuously.
 
-These two facts determine the entire architecture.
+The source data also carries limits worth stating plainly: it was collected by **2 vehicles**, and
+the **longest continuous stretch is about 20 seconds**. So **"N vehicles" in this repository means
+N concurrent streams**, not N distinct real vehicles.
 
-### Source data constraints (stated plainly)
-
-| Item | Value |
-|---|---|
-| Collection vehicles | **2** (`n015`, `n008`) — this is not a fleet |
-| Total driving time | 5.4 hours (1,000 scenes × 20s) |
-| **Max continuous stretch** | **20 seconds** — scenes from the same vehicle on the same day sit 2–8 minutes apart and cannot be stitched |
-
-nuScenes is not a continuous driving log; it is a **curated set of "interesting 20 seconds"
-sampled from longer drives**. Precisely: *not 5.4 hours of driving, but 1,000 separate
-20-second drives.*
-
-So **"N vehicles" in these docs means N concurrent streams**, not N distinct real vehicles.
-That is harmless for throughput, loss, and dedup verification (the pipeline cannot tell where
-a stream came from), but the monitoring view shows vehicles teleporting every 20 seconds.
-**nuPlan** (same team, multi-minute logs) is the upgrade path if continuity is needed.
+> 📊 **Measured figures (rates, sizes, formats, per-channel detail) and source constraints live in
+> [Data Design](docs/data-design.md) (Korean), which is the single source of truth.** This README
+> does not restate them.
 
 ## Architecture
 
@@ -97,8 +84,8 @@ The two rejoin in the clip catalog.
 |---|---|
 | 58× bandwidth asymmetry | **Claim-Check** — references on the bus, payloads in storage |
 | Not even one vehicle can stream continuously | **Triggered clips** — onboard ring buffer, upload ±20s around events |
-| 1,295 tiny messages/sec | **Time-window batching** — 100ms provisional (transport design, see [notes](docs/pipeline-notes-provisional.md)) |
-| Sensor rates span 937Hz–2Hz | **Three timestamps** + keyframe (2Hz) synchronization anchor |
+| Over a thousand tiny messages/sec | **Time-window batching** — 100ms provisional (transport design, see [notes](docs/pipeline-notes-provisional.md)) |
+| Sensor rates span hundreds-fold | **Three timestamps** + keyframe synchronization anchor |
 | Coordinates are not lat/lon | **Official-origin ENU→WGS84 conversion** |
 | Raw logs must replay standalone | **MCAP with embedded calibration** |
 | At-least-once ingest, zero-loss proof | **Four-stage exactly-once** + `event_id` set reconciliation |
@@ -120,15 +107,14 @@ Full problem-to-solution mapping is in [SDD §2–§3](docs/sdd.md) (Korean).
 
 | Gate | Result |
 |---|---|
-| Coordinate conversion contract (pytest) | **30 passed** |
-| MCAP validity | 3 scenes × 9 checks — index, embedded schemas, range random access |
-| **Coordinate chain, end to end** | LiDAR points inside boxes vs labels — **31,911 points, zero error** |
-| Kafka HA | Hard broker kill → leader re-election → **published 5600 = consumed 5600** |
-| Infrastructure | `make smoke`, all services healthy |
+| Coordinate conversion contract (pytest) | pass |
+| Lossless raw-sensor preservation | pass — 3 scenes, zero omission vs source of truth |
+| **Coordinate chain, end to end** | pass — LiDAR points inside boxes vs labels, **zero error** |
+| Kafka HA (hard broker kill) | pass — zero loss |
+| Infrastructure smoke | pass |
 
-The coordinate check is the decisive one: counting LiDAR points inside each 3D box and
-matching nuScenes' own labels exactly requires **all five stages** —
-`sensor frame → calibration → ego pose → global → box local` — to be correct.
+Figures and methods live in [Data Design §9](docs/data-design.md). The coordinate check is the
+decisive one: matching nuScenes' own labels exactly requires all five transform stages to be correct.
 
 ## Progress
 
@@ -163,7 +149,7 @@ FleetSentinel/
 ├── infra/            # docker-compose (Kafka, Flink, Iceberg, ES, Kibana, MinIO)
 ├── schemas/          # canonical Avro schemas
 ├── scripts/          # infra smoke tests · Kafka HA demo
-└── docs/             # sdd.md · data-design-v3.md
+└── docs/             # sdd.md · data-design.md
 ```
 
 ## Running

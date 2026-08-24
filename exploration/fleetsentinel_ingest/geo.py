@@ -2,7 +2,7 @@
 
 nuScenes `ego_pose.translation`은 위경도가 아니라 **지역 지도의 ENU(East-North-Up)
 로컬 미터 좌표**이고 z는 항상 0이다(실측 확인). Kibana Maps의 `geo_point`는 WGS84를
-요구하므로 변환이 필요하다 — docs/data-design-v3.md §8.
+요구하므로 변환이 필요하다 — docs/data-design.md §8.
 
 원점은 각 지도의 **남서쪽 모서리**이며, 값은 nuscenes-devkit
 `nuscenes/map_expansion/map_api.py` 45–49행에 문서화된 공식 좌표다.

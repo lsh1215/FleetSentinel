@@ -3,7 +3,7 @@
 > **상태 (v3.0 전환 중).** 자율주행 멀티모달 도메인으로 전환하면서 v2.0 파이프라인
 > (합성 생성기 · Flink 잡 · OBD 서빙 계층)은 제거했다. 현재 이 문서가 다루는 범위는
 > **도메인 무관 인프라 계층**뿐이다.
-> 데이터 설계는 [`docs/data-design-v3.md`](docs/data-design-v3.md), 전체 설계 이력은
+> 데이터 설계는 [`docs/data-design.md`](docs/data-design.md), 전체 설계 이력은
 > [`docs/sdd.md`](docs/sdd.md)를 참고한다.
 
 ## 0. 사전 준비
@@ -77,7 +77,7 @@ make clean    # 볼륨·데이터까지 삭제
 
 ## 다음 단계 (v3.0 재작성 대기)
 
-[`docs/data-design-v3.md`](docs/data-design-v3.md) §6 기준으로 아래를 새로 만든다.
+[`docs/data-design.md`](docs/data-design.md) §6 기준으로 아래를 새로 만든다.
 
 1. nuScenes → MCAP 변환 + N대 가상차량 배분 재생기
 2. 스키마 3종 (`vehicle-signal` / `perception-object` / `log-segment`)

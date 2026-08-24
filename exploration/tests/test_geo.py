@@ -1,4 +1,4 @@
-"""geo 변환 계약 검증 — docs/data-design-v3.md §8 (R-V3-1)."""
+"""geo 변환 계약 검증 — docs/data-design.md §8 (R-V3-1)."""
 
 from __future__ import annotations
 

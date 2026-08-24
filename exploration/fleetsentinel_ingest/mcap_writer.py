@@ -1,6 +1,6 @@
 """SceneExtract를 MCAP 파일로 기록한다 — Bronze 원본 보존 포맷(§9.1).
 
-MCAP을 고른 이유는 docs/data-design-v3.md §9.1에 있다: 이종 타임스탬프 메시지를
+MCAP을 고른 이유는 docs/data-design.md §9.1에 있다: 이종 타임스탬프 메시지를
 채널별로 담고, **스키마를 파일에 내장**하며(self-describing), 인덱스가 있어 구간
 랜덤 액세스가 된다. ROS 2 Iron부터 rosbag2 기본 포맷이다.
 
@@ -29,7 +29,7 @@ US_TO_NS = 1000
 SIGNAL_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "title": "VehicleSignal",
-    "description": "FleetSentinel ① 신호 계층 — docs/data-design-v3.md §4.1",
+    "description": "FleetSentinel ① 신호 계층 — docs/data-design.md §4.1",
     "properties": {
         "event_id": {"type": "string", "description": "ULID, 멱등키"},
         "vehicle_id": {"type": "string", "description": "재생 배분 가상 차량 id"},

@@ -1,6 +1,6 @@
 """nuScenes 장면(scene)에서 FleetSentinel 3계층 레코드를 추출한다.
 
-계층 정의는 docs/data-design-v3.md §3–§4:
+계층 정의는 docs/data-design.md §3–§4:
   ① 신호(signal)        — ego_pose + CAN bus, 수십 KB/s
   ② 인지 산출(perception) — 3D 박스, 키프레임 2Hz
   ③ 원시 센서(raw)       — 카메라/LiDAR/레이더, ~27.5 MB/s → Claim-Check 대상
@@ -126,7 +126,7 @@ class SceneExtract:
     (LiDAR는 센서 프레임, 3D 박스는 글로벌 프레임이라 정렬되지 않는다)."""
 
 
-# 신호 계층에 싣는 CAN 채널. 실측 주기는 docs/data-design-v3.md §3.1.
+# 신호 계층에 싣는 CAN 채널. 실측 주기는 docs/data-design.md §3.1.
 NATIVE_CAN_CHANNELS = (
     "zoesensors",           # ~955Hz — 페달·조향 원시 센서
     "ms_imu",               # ~100Hz
