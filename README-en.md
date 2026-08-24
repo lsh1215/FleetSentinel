@@ -16,8 +16,8 @@ In one sentence:
 ![Elasticsearch](https://img.shields.io/badge/Elasticsearch-005571?style=flat-square&logo=elasticsearch&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
-> **Status:** 🚧 P1 (ingestion layer) complete · P2 (schemas + Kafka replayer) next
-> **Docs (Korean):** [System Design Document](docs/sdd.md) · [Data Design](docs/data-design-v3.md) · [Runbook](RUN.md)
+> **Status:** 🚧 **Data characterization stage** — measured what data arrives, at what scale and in what format. The ingest/ETL pipeline is not yet designed.
+> **Docs (Korean):** [System Design Document](docs/sdd.md) · [Data Design](docs/data-design-v3.md) · [Provisional pipeline notes](docs/pipeline-notes-provisional.md) · [Runbook](RUN.md)
 
 > **Motivation (Prior Art).** A personal extension of **[AutoNotify](https://github.com/Qualcomm-Capstone)**, a Qualcomm-sponsored capstone on on-device real-time speeding detection. Feedback from a Qualcomm engineer at the final presentation — _"Catching events one vehicle at a time on the edge is solid work. But scale it to a real fleet and the bottleneck moves off the model and onto the ingest, storage, and refinement pipeline"_ — prompted generalizing single-vehicle event handling into a **fleet-scale multimodal sensor platform**. (Qualcomm was not involved in this extension.)
 
@@ -80,7 +80,7 @@ The two rejoin in the clip catalog.
 |---|---|
 | 99× bandwidth asymmetry | **Claim-Check** — references on the bus, payloads in storage |
 | Not even one vehicle can stream continuously | **Triggered clips** — onboard ring buffer, upload ±20s around events |
-| 1,295 tiny messages/sec | **100ms window batching** — 4,925 msg/s at 500 vehicles (measured) |
+| 1,295 tiny messages/sec | **Time-window batching** — 100ms provisional (transport design, see [notes](docs/pipeline-notes-provisional.md)) |
 | Sensor rates span 937Hz–2Hz | **Three timestamps** + keyframe (2Hz) synchronization anchor |
 | Coordinates are not lat/lon | **Official-origin ENU→WGS84 conversion** |
 | Raw logs must replay standalone | **MCAP with embedded calibration** |
@@ -118,7 +118,7 @@ matching nuScenes' own labels exactly requires **all five stages** —
 | Phase | Scope | Status |
 |---|---|---|
 | P0 | Local infrastructure (Kafka HA, Flink, Iceberg, ES, Kibana) | ✅ |
-| **P1** | **nuScenes ingest · MCAP conversion · Rerun playback** | ✅ |
+| **P1** | **Data characterization** — scale/format measurement, coordinate system, losslessness | ✅ |
 | P2 | Schema finalization · batching replayer → Kafka | next |
 | P3 | Flink pipeline (dedup, validation, DLQ, sinks) | |
 | P4 | Claim-Check · clip catalog | |
@@ -140,7 +140,7 @@ Stated plainly. Full list in [SDD §4.2](docs/sdd.md).
 
 ```
 FleetSentinel/
-├── ingestion/        # (Python) nuScenes reader · MCAP writer · Rerun replay
+├── exploration/      # (Python) P1 data exploration — measurement/verification tools (not a pipeline)
 ├── flink-pipeline/   # (Java) Flink stream processing — rewritten in P3
 ├── infra/            # docker-compose (Kafka, Flink, Iceberg, ES, Kibana, MinIO)
 ├── schemas/          # canonical Avro schemas
@@ -157,7 +157,8 @@ make smoke     # verify infrastructure
 make ha-demo   # Kafka HA broker-kill demo
 ```
 
-See [`ingestion/README.md`](ingestion/README.md) for the ingestion layer.
+See [`exploration/README.md`](exploration/README.md) for the exploration tooling.
+**That directory is not a pipeline implementation** — it holds the measurement and verification tools behind the figures in these docs.
 
 ## License
 

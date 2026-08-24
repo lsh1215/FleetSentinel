@@ -16,8 +16,8 @@
 ![Elasticsearch](https://img.shields.io/badge/Elasticsearch-005571?style=flat-square&logo=elasticsearch&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
-> **Status:** 🚧 P1(수집 계층) 완료 · P2(스키마·Kafka 재생기) 진행 예정
-> **문서:** [System Design Document](docs/sdd.md) · [데이터 설계](docs/data-design-v3.md) · [실행 절차](RUN.md)
+> **Status:** 🚧 **데이터 정의 단계** — 어떤 데이터가 어떤 규모·형식으로 들어오는지 실측 완료. 수집·ETL 파이프라인은 아직 설계하지 않았습니다.
+> **문서:** [System Design Document](docs/sdd.md) · [데이터 설계](docs/data-design-v3.md) · [파이프라인 잠정 노트](docs/pipeline-notes-provisional.md) · [실행 절차](RUN.md)
 
 > **Motivation (Prior Art).** Qualcomm 기업 연계 캡스톤 **[AutoNotify](https://github.com/Qualcomm-Capstone)**(On-Device-AI 실시간 과속탐지)를 **개인적으로 확장**한 데이터 엔지니어링 프로젝트입니다. 발표에서 받은 현직자 피드백 — _「엣지에서 차량 한 대씩 이벤트를 잡아내는 건 잘 만들었어요. 그런데 실제 fleet 규모로 올리면 병목은 모델이 아니라 수집·저장·정제 파이프라인으로 넘어갑니다」_ — 을 계기로, 단일 차량 이벤트 처리를 **fleet 규모 멀티모달 센서 플랫폼**으로 일반화했습니다. (Qualcomm은 본 확장에 관여하지 않았습니다.)
 
@@ -79,7 +79,7 @@ Flink exactly-once                │
 |---|---|
 | 대역폭 99배 차이 | **Claim-Check** — 참조만 버스로, 원본은 스토리지로 |
 | 1대도 연속 업로드 불가 | **트리거 클립** — 온보드 링버퍼 + 이벤트 앞뒤 20초만 업로드 |
-| 초당 1,295개 잘린 메시지 | **100ms 창 배치** — 500대에서 4,925 msg/s (실측) |
+| 초당 1,295개 잘린 메시지 | **시간창 배치** — 100ms 잠정 (전송 설계 영역, [잠정 노트](docs/pipeline-notes-provisional.md)) |
 | 센서 주기가 937Hz~2Hz | **타임스탬프 3종** + 키프레임(2Hz) 동기화 앵커 |
 | 좌표가 위경도가 아님 | **공식 원점 기반 ENU→WGS84** (§S-5) |
 | 원본이 그 자체로 재생돼야 함 | **MCAP + 캘리브레이션 내장** |
@@ -117,7 +117,7 @@ Flink exactly-once                │
 | 단계 | 범위 | 상태 |
 |---|---|---|
 | P0 | 로컬 인프라 (Kafka HA·Flink·Iceberg·ES·Kibana) | ✅ |
-| **P1** | **nuScenes 수집 · MCAP 변환 · Rerun 재생** | ✅ |
+| **P1** | **데이터 정의** — 규모·형식 실측, 좌표계 규명, 무손실 검증 | ✅ |
 | P2 | 스키마 3종 확정 · 배치 재생기 → Kafka | 다음 |
 | P3 | Flink 파이프라인 (dedup·검증·DLQ·싱크) | |
 | P4 | Claim-Check · 클립 카탈로그 | |
@@ -139,7 +139,7 @@ Flink exactly-once                │
 
 ```
 FleetSentinel/
-├── ingestion/        # (Python) nuScenes 판독 · MCAP 변환 · Rerun 재생
+├── exploration/      # (Python) P1 데이터 탐색 — 측정·검증·재생 도구 (파이프라인 구현 아님)
 ├── flink-pipeline/   # (Java) Flink 스트림 처리 — P3에서 재작성
 ├── infra/            # docker-compose (Kafka·Flink·Iceberg·ES·Kibana·MinIO)
 ├── schemas/          # Avro 정본 스키마
@@ -156,7 +156,8 @@ make smoke     # 인프라 검증
 make ha-demo   # Kafka HA broker-kill 데모
 ```
 
-수집 계층은 [`ingestion/README.md`](ingestion/README.md)를 참고하세요.
+데이터 탐색 도구는 [`exploration/README.md`](exploration/README.md)를 참고하세요.
+**이 디렉터리는 파이프라인 구현이 아닙니다** — 문서의 실측 수치를 뽑아낸 측정·검증 도구입니다.
 
 ## 라이선스
 

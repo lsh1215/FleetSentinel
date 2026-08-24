@@ -36,7 +36,7 @@ flink-pipeline/target/
 *.class
 # Python
 generator/.venv/
-ingestion/.venv/
+exploration/.venv/
 **/.venv/
 **/__pycache__/
 *.pyc

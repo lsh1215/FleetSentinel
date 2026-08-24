@@ -1,0 +1,18 @@
+# 탐색 환경 직접 의존.
+#
+# ⚠️ 이 파일을 `pip install -r`로 바로 쓰지 말 것. nuscenes-devkit이 numpy<2를 선언해
+#    pip이 ResolutionImpossible로 거부한다. **반드시 ./setup-venv.sh 를 쓴다** —
+#    2단계 설치(devkit 먼저, numpy 2로 덮어쓰기)가 필요한 이유는 그 스크립트에 적혀 있다.
+#
+# 검증된 해소 버전 (2026-08-24):
+#   nuscenes-devkit 1.2.0 · rerun-sdk 0.23.1 · mcap 1.4.0
+#   numpy 2.5.2 · python-ulid 4.0.1 · pytest 9.1.1
+#   (전이 의존: matplotlib 3.11.1, opencv-python-headless 4.11.0.86,
+#    pillow 12.3.0, pyquaternion 0.9.9)
+
+nuscenes-devkit==1.2.0
+rerun-sdk==0.23.1
+mcap==1.4.0
+python-ulid==4.0.1
+pytest==9.1.1
+numpy>=2.1          # devkit 선언(<2)을 의도적으로 무시 — setup-venv.sh 참고

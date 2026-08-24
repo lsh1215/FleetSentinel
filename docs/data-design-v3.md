@@ -141,23 +141,13 @@ CARLA는 "**실주행에 부족한 상황을 의도적으로 만든다**". 이 �
 > **다운샘플하지 않는다.** `ego_pose` 시각(20Hz)에 최근접 결합하면 이 채널의 98%가
 > 버려진다. 신호 계층에도 무손실 원칙을 적용하고, 메시지 수는 배치로 흡수한다.
 
-##### 배치 정책 — 100ms 창 (실측)
+##### 전송 배치는 이 문서 범위 밖이다
 
-| 창 | msg/s/대 | rec/msg | 메시지 크기 | 500대 msg/s | 추가 지연 |
-|---|---|---|---|---|---|
-| 없음 | 1,295.2 | 1.0 | 342 B | 647,610 | 0 ms |
-| 10 ms | 97.5 | 13.3 | 4.4 KB | 48,758 | ≤10 ms |
-| 50 ms | 19.6 | 66.0 | 21.9 KB | 9,817 | ≤50 ms |
-| **100 ms** | **9.8** | **131.5** | **43.4 KB** | **4,925** | **≤100 ms** |
-| 250 ms | 4.0 | 325.2 | 108.9 KB | 1,992 | ≤250 ms |
-| 1000 ms | 1.0 | 1,233.6 | 412.8 KB | 525 | ≤1000 ms |
+초당 1,295 레코드를 어떻게 묶어 보낼지는 **전송 설계**이고 데이터 정의가 아니다.
+측정 과정에서 창 크기별 수치가 먼저 나왔으므로
+[`pipeline-notes-provisional.md`](pipeline-notes-provisional.md)에 잠정 기록으로 격리했다.
 
-**100ms 채택.** 메시지 수가 1/131로 줄고, 지연 100ms는 관제 요구에서 무시 가능하며,
-43.4 KB는 Kafka `max.message.bytes` 기본 1MB 안에 넉넉히 들어간다.
-
-배치 계약: ① 멱등성 단위는 **레코드**(`event_id` 유지, 배치는 전송 단위일 뿐)
-② 창 경계는 **`sensor_time` 절대 시각 정렬**(재전송·지연에도 결정적)
-③ **부분 창도 방출**(무손실). 구현은 `ingestion/fleetsentinel_ingest/batching.py`.
+이 문서가 확정하는 것은 **"초당 1,295 레코드, 평균 342 B, 채널별 주기는 위 표"** 까지다.
 
 #### ② 인지 산출
 
@@ -399,7 +389,7 @@ v2.0은 `event_time` + `ingest_time` 2종이었다. 멀티모달에서는 **센�
 > `map_expansion/map_api.py` 45–49행의 **공식 문서화 값**이었다. 그리고 "보스턴 1.35× 스케일링"은
 > **Web Mercator 축척계수 `1/cos(42.34°) = 1.3528`** 이었다 — 로컬 접평면/대권 방식으로 직접
 > 변환하면 어떤 보정 상수도 필요 없다. 왕복 무손실·지도 래스터 정합·거리 오차 ≤0.014%로 검증했다.
-> 상세는 §14.1, 구현은 [`ingestion/fleetsentinel_ingest/geo.py`](../ingestion/fleetsentinel_ingest/geo.py).
+> 상세는 §14.1, 구현은 [`exploration/fleetsentinel_ingest/geo.py`](../exploration/fleetsentinel_ingest/geo.py).
 
 v2.0 §6.6의 **lat/lon 순서 규약은 그대로 유지**한다 — BigQuery/GeoJSON = `[lon, lat]`, ES 문자열 = `"lat,lon"`.
 
@@ -627,7 +617,7 @@ v2.0의 DLQ 4분류(`PARSE_FAILURE` / `SCHEMA_VALIDATION_FAILURE` / `BUSINESS_RU
 ## 14. 미해결 항목 — P1 실측 검증 결과 (2026-08-22)
 
 nuScenes mini(4.17GB) + CAN bus 확장(745MB)을 실제로 받아 검증했다. 산출물·절차는
-[`ingestion/README.md`](../ingestion/README.md).
+[`exploration/README.md`](../exploration/README.md).
 
 | ID | 항목 | 판정 | 근거 |
 |---|---|---|---|
@@ -652,7 +642,7 @@ nuScenes mini(4.17GB) + CAN bus 확장(745MB)을 실제로 받아 검증했다. 
 
 싱가포르는 적도 근처라 보정이 필요 없었고 보스턴만 필요했던 것이다. **로컬 접평면 또는
 대권 방식으로 직접 변환하면 이 보정 자체가 불필요하다.** 구현은
-[`ingestion/fleetsentinel_ingest/geo.py`](../ingestion/fleetsentinel_ingest/geo.py).
+[`exploration/fleetsentinel_ingest/geo.py`](../exploration/fleetsentinel_ingest/geo.py).
 
 검증 3종 통과:
 
