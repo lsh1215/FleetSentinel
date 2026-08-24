@@ -38,6 +38,23 @@ throughput (~12.5 MB/s) — **not even one vehicle can stream continuously.**
 
 These two facts determine the entire architecture.
 
+### Source data constraints (stated plainly)
+
+| Item | Value |
+|---|---|
+| Collection vehicles | **2** (`n015`, `n008`) — this is not a fleet |
+| Total driving time | 5.4 hours (1,000 scenes × 20s) |
+| **Max continuous stretch** | **20 seconds** — scenes from the same vehicle on the same day sit 2–8 minutes apart and cannot be stitched |
+
+nuScenes is not a continuous driving log; it is a **curated set of "interesting 20 seconds"
+sampled from longer drives**. Precisely: *not 5.4 hours of driving, but 1,000 separate
+20-second drives.*
+
+So **"N vehicles" in these docs means N concurrent streams**, not N distinct real vehicles.
+That is harmless for throughput, loss, and dedup verification (the pipeline cannot tell where
+a stream came from), but the monitoring view shows vehicles teleporting every 20 seconds.
+**nuPlan** (same team, multi-minute logs) is the upgrade path if continuity is needed.
+
 ## Architecture
 
 ```
@@ -78,7 +95,7 @@ The two rejoin in the clip catalog.
 
 | Problem | Solution |
 |---|---|
-| 99× bandwidth asymmetry | **Claim-Check** — references on the bus, payloads in storage |
+| 58× bandwidth asymmetry | **Claim-Check** — references on the bus, payloads in storage |
 | Not even one vehicle can stream continuously | **Triggered clips** — onboard ring buffer, upload ±20s around events |
 | 1,295 tiny messages/sec | **Time-window batching** — 100ms provisional (transport design, see [notes](docs/pipeline-notes-provisional.md)) |
 | Sensor rates span 937Hz–2Hz | **Three timestamps** + keyframe (2Hz) synchronization anchor |
@@ -132,6 +149,7 @@ matching nuScenes' own labels exactly requires **all five stages** —
 Stated plainly. Full list in [SDD §4.2](docs/sdd.md).
 
 - **Not live monitoring.** nuScenes replay reproduces bandwidth, cadence, and format, but there is no real-vehicle integration.
+- **The source is 2 vehicles with a 20-second continuity ceiling.** "N vehicles" means N concurrent streams, not N distinct real vehicles.
 - **Infrastructure HA is out of scope.** A single-host 3-broker setup demonstrates broker-level failover only.
 - **No perception model.** Perception outputs come from nuScenes labels.
 - **Radar payloads unparsed** — `.pcd` files are stored in MCAP but not decoded or visualized.
