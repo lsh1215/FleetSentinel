@@ -397,14 +397,23 @@ Bronze에는 **ENU 원본을 그대로** 두고 `lat`/`lon`은 Silver 파생으�
 파일에 내장**하며(self-describing), 인덱스가 있어 구간 랜덤 액세스가 된다. ROS 2 Iron부터
 rosbag2 기본 포맷이다.
 
-| 채널 | 인코딩 | 계층 |
-|---|---|---|
-| `/vehicle/signal` | jsonschema | ① |
-| `/perception/objects` | jsonschema | ② |
-| **`/tf/calibration`** | jsonschema | 센서 외부/내부 파라미터 |
-| `/camera/CAM_*` | jpeg | ③ |
-| `/lidar/LIDAR_TOP` | octet-stream | ③ |
-| `/radar/RADAR_*` | octet-stream | ③ |
+**세그먼트 = MCAP 파일 하나.** 실제 차량은 연속 녹화하므로 업로드하려면 유한한 덩어리로
+잘라야 하고, 그 조각이 세그먼트다 — *"더 긴 스트림의 일부"* 라는 뜻이 단어에 들어 있다.
+우리는 **클립 1개 = MCAP 1파일**로 확정했다(§5.1).
+
+> ⚠️ **세그먼트(파일)와 `segment-ref`(참조 레코드)는 다른 것이다.** 전자는 357MB짜리 파일이고
+> 후자는 그것을 가리키는 2KB 미만 레코드다. 구분은 [데이터 설계 §4.3](data-design.md).
+
+실측 구성(scene-0061 · 357MB · 19.2초 · 총 2,963건 · 청크 인덱스 42개):
+
+| 채널 | 인코딩 | 계층 | 건수 |
+|---|---|---|---|
+| `/vehicle/signal` | jsonschema | ① | 382 |
+| `/perception/objects` | jsonschema | ② | 39 |
+| **`/tf/calibration`** | jsonschema | 센서 외부/내부 파라미터 | 12 |
+| `/camera/CAM_*` × 6 | jpeg | ③ | ~1,480 |
+| `/lidar/LIDAR_TOP` | octet-stream | ③ | ~395 |
+| `/radar/RADAR_*` × 5 | octet-stream | ③ | ~640 |
 
 `/tf/calibration`이 P-6의 직접적 답이다. 이것 없이는 MCAP만으로 3D 재생이 불가능하다.
 **검증 방법은 재생기가 MCAP만 읽게 하는 것** — devkit도 원본 데이터셋도 참조하지 않는다.
@@ -668,7 +677,7 @@ L-10은 이후 해소됐으나 **결함이 있었다는 기록 자체를 남긴�
 | 3 | NFR 재산정 | ✅ 차량당 실측치와 스케일링 함수까지 확정. **fleet 목표치는 정하지 않는다** — v2.0의 "500대"가 근거 없는 잔재였다(원천 차량 2대) |
 
 세그먼트 분할 단위는 **클립 1개 = MCAP 1파일**(357MB)로 확정한다. 시간 구간 분할은
-`log-segment`에 세그먼트 순번을 추가해야 하고, 20초 클립에서 얻는 이점이 크지 않다.
+`segment-ref`에 세그먼트 순번을 추가해야 하고, 20초 클립에서 얻는 이점이 크지 않다.
 
 ### 5.2 Rollback
 

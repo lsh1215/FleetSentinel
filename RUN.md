@@ -78,7 +78,7 @@ make clean    # 볼륨·데이터까지 삭제
 
 [`docs/data-design.md`](docs/data-design.md) §6 기준으로 아래를 새로 만든다.
 
-1. 스키마 3종 필드 계약 확정 (`vehicle-signal` / `perception-object` / `log-segment`)
+1. 스키마 3종 필드 계약 확정 (`vehicle-signal` / `perception-object` / `segment-ref`)
 2. 100ms 배치 재생기 → Kafka
 3. Flink 파이프라인 (dedup · 검증 · DLQ) → **ClickHouse** 적재
 4. Claim-Check 경로 (MCAP 세그먼트 → 오브젝트 스토리지)

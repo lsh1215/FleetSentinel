@@ -117,7 +117,8 @@ def write_scene_mcap(
 
     :param include_raw: False면 ③ 원시 센서를 제외하고 경량 계층만 기록한다
         (대역폭 대비 실험·경량 카탈로그 생성용).
-    :returns: log-segment 메타(§4.3)에 쓸 요약 dict
+    :returns: segment-ref 메타(§4.3)에 쓸 요약 dict — 이 파일 자체가 '세그먼트'이고,
+        돌려주는 dict은 그것을 **가리키는 참조**다(둘을 혼동하지 않도록 이름을 나눴다)
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     channels_seen: List[str] = []
