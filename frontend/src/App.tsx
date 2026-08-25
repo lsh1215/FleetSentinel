@@ -22,6 +22,7 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<"map" | "sensor">("map");
   const [reloadKey, setReloadKey] = useState(0);
+  const [follow, setFollow] = useState(true);
   const [meta, setMeta] = useState<VehicleMeta[]>([]);
   const clientRef = useRef<SseClient | null>(null);
 
@@ -102,6 +103,12 @@ export default function App() {
               센서 재생
               <i>카메라 6 · LiDAR · 3D 박스</i>
             </button>
+            {view === "map" && (
+              <label className="toggle vt-reload" title="선택 차량을 화면 중앙에 유지한다">
+                <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
+                따라가기
+              </label>
+            )}
             {view === "sensor" && rrdUrl && (
               <button className="ghost vt-reload" onClick={() => setReloadKey((k) => k + 1)}>
                 다시 로드
@@ -113,7 +120,7 @@ export default function App() {
             {/* 지도는 언마운트하지 않는다 — 다시 만들면 타일을 새로 받고 궤적이 끊긴다.
                 탭 전환은 표시 여부만 바꾼다. */}
             <div className="stage-layer" style={{ visibility: view === "map" ? "visible" : "hidden" }}>
-              <FleetMap selectedId={selected} onSelect={setSelected} />
+              <FleetMap selectedId={selected} onSelect={setSelected} follow={follow} />
               {selectedMeta && <p className="map-note">{selectedMeta.description}</p>}
             </div>
 

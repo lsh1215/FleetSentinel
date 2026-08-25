@@ -319,3 +319,18 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-
 .dot { background: var(--text-3); border-radius: 1px; }
 .vehicle.sel .dot { background: var(--sel); }
 .tag.on { background: var(--raised); border-color: var(--line-strong); color: var(--text); }
+
+.toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10px; color: var(--text-3); cursor: pointer;
+  padding: 4px 9px; border: 1px solid var(--line); border-radius: 3px;
+  background: var(--surface-2); text-transform: uppercase; letter-spacing: 0.05em;
+}
+.toggle:hover { color: var(--text-2); }
+.toggle input { accent-color: var(--text-2); width: 11px; height: 11px; margin: 0; }
+.maplibregl-ctrl-scale {
+  background: rgba(13,15,19,0.75) !important; border-color: var(--line-strong) !important;
+  color: var(--text-3) !important; font-family: var(--mono) !important; font-size: 10px !important;
+}
+.maplibregl-ctrl-attrib { background: rgba(13,15,19,0.75) !important; font-size: 9px !important; }
+.maplibregl-ctrl-attrib a { color: var(--text-3) !important; }

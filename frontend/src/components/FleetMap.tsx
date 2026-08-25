@@ -22,38 +22,44 @@ import { telemetryStore } from "../lib/telemetryStore";
 interface Props {
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** 선택 차량을 화면 중앙에 유지한다. 끄면 자유 탐색. */
+  follow: boolean;
 }
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
-export function FleetMap({ selectedId, onSelect }: Props) {
+export function FleetMap({ selectedId, onSelect, follow }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const rafRef = useRef<number>(0);
   const selectedRef = useRef(selectedId);
+  const followRef = useRef(follow);
   const didFitRef = useRef(false);
   selectedRef.current = selectedId;
+  followRef.current = follow;
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: "https://demotiles.maplibre.org/style.json",
+      // CARTO Dark Matter 벡터 스타일. 키가 필요 없고 도로·거리명·건물이 실제로 들어 있다.
+      // 이전에 쓰던 demotiles는 **데모용 저해상도 세계지도**라 줌 13 이상에서 도로가 없다 —
+      // 차량이 도로 위인지 강 위인지 분간이 안 돼 관제 용도로 성립하지 않았다.
+      style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
       center: [103.7884, 1.2988],
       zoom: 13,
-      attributionControl: false,
+      // CARTO/OSM 타일은 출처 표시가 이용 조건이다. 접었다 펼 수 있게만 한다.
+      attributionControl: { compact: true },
     });
     mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
+    // 축척은 관제에서 필수다 — "저 차가 얼마나 떨어져 있나"를 눈으로 재야 한다.
+    map.addControl(new maplibregl.ScaleControl({ maxWidth: 90, unit: "metric" }), "bottom-left");
 
     map.on("load", () => {
-      // 데모 베이스맵을 관제 화면에 맞게 어둡게 덮는다.
-      for (const layer of map.getStyle().layers ?? []) {
-        if (layer.type === "background") map.setPaintProperty(layer.id, "background-color", "#0d0f13");
-        if (layer.type === "fill") map.setPaintProperty(layer.id, "fill-color", "#15181e");
-        if (layer.type === "line") map.setPaintProperty(layer.id, "line-color", "#1f242c");
-      }
+      // Dark Matter는 이미 어두운 스타일이라 재색칠이 필요 없다. 이전에는 데모 스타일을
+      // 레이어 타입별로 덮어썼는데, 의미가 다른 레이어를 같은 색으로 칠하는 거친 방법이었다.
 
       map.addSource("trails", { type: "geojson", data: EMPTY });
       map.addLayer({
@@ -69,7 +75,14 @@ export function FleetMap({ selectedId, onSelect }: Props) {
             10, ["case", ["get", "selected"], 1.5, 0.6],
             16, ["case", ["get", "selected"], 3, 1.4],
           ],
-          "line-opacity": ["case", ["get", "selected"], 0.9, 0.35],
+          // 최근 구간이 진하다 — 진행 방향이 한눈에 읽힌다.
+          "line-opacity": [
+            "case",
+            ["all", ["get", "selected"], ["get", "recent"]], 0.95,
+            ["get", "selected"], 0.3,
+            ["get", "recent"], 0.5,
+            0.15,
+          ],
         },
       });
 
@@ -108,6 +121,38 @@ export function FleetMap({ selectedId, onSelect }: Props) {
           ],
           "circle-stroke-width": ["case", ["get", "selected"], 2, 1],
           "circle-stroke-color": "#0d0f13",
+        },
+      });
+
+      // 진행 방향 화살표. headingDeg를 계산해두고 쓰지 않고 있었다 —
+      // 점만 있으면 차가 어디로 가는지 알 수 없어 관제에서 절반의 정보가 빠진다.
+      map.addLayer({
+        id: "vehicle-heading",
+        type: "symbol",
+        source: "vehicles",
+        minzoom: 11,
+        layout: {
+          "text-field": "\u25B2",
+          "text-font": ["Open Sans Regular"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 11, 9, 17, 15],
+          // 지도 기준으로 회전시킨다. viewport 기준이면 지도를 회전할 때 방향이 어긋난다.
+          "text-rotate": ["get", "heading"],
+          "text-rotation-alignment": "map",
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+          "text-offset": [0, -1.15],
+        },
+        paint: {
+          "text-color": [
+            "case",
+            ["get", "alert"], "#d94a3d",
+            ["get", "selected"], "#e8eaed",
+            "#8b95a5",
+          ],
+          "text-halo-color": "#0d0f13",
+          "text-halo-width": 1,
+          // 정차 중이면 흐리게 — 방향 정보가 무의미하다.
+          "text-opacity": ["case", ["get", "moving"], 1, 0.25],
         },
       });
 
@@ -190,15 +235,25 @@ export function FleetMap({ selectedId, onSelect }: Props) {
           properties: {
             vehicleId: v.vehicleId,
             label: v.vehicleId,
+            heading: v.headingDeg,
+            moving: v.speedMps > 0.5,
             selected,
             alert: Math.abs(v.yawRate) > 0.35 || v.zeroLidarCount > 0,
           },
         });
         if (v.trail.length > 1) {
+          // 궤적을 최근/과거 두 구간으로 쪼갠다. 한 줄로 그리면 어느 쪽이 최신인지,
+          // 즉 차가 어디서 어디로 갔는지 읽을 수 없다.
+          const cut = Math.max(1, Math.floor(v.trail.length * 0.65));
           lines.push({
             type: "Feature",
-            geometry: { type: "LineString", coordinates: v.trail },
-            properties: { selected },
+            geometry: { type: "LineString", coordinates: v.trail.slice(0, cut + 1) },
+            properties: { selected, recent: false },
+          });
+          lines.push({
+            type: "Feature",
+            geometry: { type: "LineString", coordinates: v.trail.slice(cut) },
+            properties: { selected, recent: true },
           });
         }
       }
@@ -211,6 +266,25 @@ export function FleetMap({ selectedId, onSelect }: Props) {
         type: "FeatureCollection",
         features: lines,
       });
+
+      // 따라가기: 선택 차량이 뷰포트 밖으로 나가려 하면 다시 중앙으로 끌어온다.
+      // 매 프레임 easeTo를 부르면 사용자의 팬 조작을 계속 뺏으므로, 화면 안쪽
+      // 여유 영역을 벗어났을 때만 개입한다.
+      if (followRef.current && sel) {
+        const v = vehicles.find((x) => x.vehicleId === sel);
+        if (v?.pos) {
+          const target: [number, number] = [v.pos[1], v.pos[0]];
+          const pt = m.project(target);
+          const { width, height } = m.getCanvas().getBoundingClientRect();
+          const margin = 0.28; // 가장자리 28% 안으로 들어오면 재중심
+          const outside =
+            pt.x < width * margin ||
+            pt.x > width * (1 - margin) ||
+            pt.y < height * margin ||
+            pt.y > height * (1 - margin);
+          if (outside) m.easeTo({ center: target, duration: 700 });
+        }
+      }
 
       // 첫 위치가 들어오면 한 번만 전체 차량이 보이도록 맞춘다.
       if (!didFitRef.current && points.length > 0) {
