@@ -104,8 +104,9 @@ const jitter = Math.random() * backoff * 0.3;   // 동시 재연결을 흩뜨린
 그래서 우리가 아는 마지막 id가 있으면 쿼리(`?from=`)로 넘기고, 이후 자동 재연결은 브라우저의
 헤더에 맡긴다. 서버는 둘 다 받는다.
 
-**중복은 어차피 하류에서 걸러진다.** 모든 레코드가 `event_id`를 갖고 있어 파이프라인이
-`keyBy(event_id)`로 중복을 제거한다. 프론트가 완벽할 필요가 없다는 뜻이고, 이건 우연이 아니라
+**중복은 어차피 하류에서 걸러진다.** 모든 레코드가 차량별 단조 `seq`를 갖고 있어
+파이프라인이 `keyBy(vehicle_id)` + `seq` 슬라이딩 윈도우로 중복을 제거한다
+([ack·dedup 설계](ack-dedup-design.md)). 프론트가 완벽할 필요가 없다는 뜻이고, 이건 우연이 아니라
 [설계상 그렇게 잡은 것](sdd.md)이다.
 
 📄 `src/lib/sse.ts` `connect()` · `server/mockStream.ts` `/api/stream`

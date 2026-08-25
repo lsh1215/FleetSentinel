@@ -18,6 +18,20 @@
 | 근거 | nuScenes mini 실측 ([데이터 설계](data-design.md) §3.1) |
 | 전제 | **N = 동시 스트림 수**, 실제 차량 N대가 아니다 ([데이터 설계 §2.3](data-design.md)) |
 | 기저 수치 | **차량당 실측치는 [데이터 설계 §3](data-design.md)이 정본.** 이 문서는 거기서 파생된 전송 수치만 다룬다 |
+
+> ### 재검토 완료 — §4·§6은 무효다
+>
+> 이 문서의 **배치 전송(§4)** 과 **배치 단위 dedup(§6-1)** 은 재검토에서 뒤집혔다.
+> 애플리케이션 배치는 축적 창만큼의 유실을 만들고, 그 대가로 얻은 dedup 상태 132배
+> 절감은 `seq`를 쓰면 필요조차 없었다(실측 373,676배 절감).
+>
+> | 이 문서 | 확정 |
+> |---|---|
+> | 100ms 애플리케이션 배치 | **레코드 단위 gRPC 스트림** — [설계 검토](ingestion-design-review.md) §4.1 |
+> | `keyBy(vehicle_id)` + 배치 단위 dedup | **`(vehicle_id, boot_id, seq)` 슬라이딩 윈도우** — [ack·dedup 설계](ack-dedup-design.md) |
+> | `event_id` + `replay_epoch` | **`seq`가 대체** — `event_id` 제거 |
+>
+> **처리량·대역폭 측정치(§2·§3)는 유효하다.** 무효인 것은 그 위에 세운 전송 결정이다.
 | 구현 | `exploration/fleetsentinel_ingest/batching.py` (탐색 코드, 승격 대상 아님) |
 
 > ## ⚠️ 이 문서의 배치 결정은 재검토됐다 (2026-08-25)

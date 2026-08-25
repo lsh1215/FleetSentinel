@@ -19,7 +19,7 @@
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
 > **Status:** 🚧 **데이터 정의 단계** — 어떤 데이터가 어떤 규모·형식으로 들어오는지 실측 완료. 수집·ETL 파이프라인은 아직 설계하지 않았습니다.
-> **문서:** [System Design Document](docs/sdd.md) · [데이터 설계](docs/data-design.md) · [프론트엔드 기술 정리](docs/frontend-tech-notes.md) · [수집 계층 검토](docs/ingestion-design-review.md) · [WAL 설계](docs/wal-design.md) · [파이프라인 잠정 노트](docs/pipeline-notes-provisional.md) · [실행 절차](RUN.md)
+> **문서:** [System Design Document](docs/sdd.md) · [데이터 설계](docs/data-design.md) · [프론트엔드 기술 정리](docs/frontend-tech-notes.md) · [수집 계층 검토](docs/ingestion-design-review.md) · [WAL 설계](docs/wal-design.md) · [ack·dedup 설계](docs/ack-dedup-design.md) · [파이프라인 잠정 노트](docs/pipeline-notes-provisional.md) · [실행 절차](RUN.md)
 
 > **Motivation (Prior Art).** Qualcomm 기업 연계 캡스톤 **[AutoNotify](https://github.com/Qualcomm-Capstone)**(On-Device-AI 실시간 과속탐지)를 **개인적으로 확장**한 데이터 엔지니어링 프로젝트입니다. 발표에서 받은 현직자 피드백 — _「엣지에서 차량 한 대씩 이벤트를 잡아내는 건 잘 만들었어요. 그런데 실제 fleet 규모로 올리면 병목은 모델이 아니라 수집·저장·정제 파이프라인으로 넘어갑니다」_ — 을 계기로, 단일 차량 이벤트 처리를 **fleet 규모 멀티모달 센서 플랫폼**으로 일반화했습니다. (Qualcomm은 본 확장에 관여하지 않았습니다.)
 
@@ -49,14 +49,14 @@ nuScenes 실측 (1000 scene × 20초)      [CARLA/OpenSCENARIO — 보강, 스�
    ┌────┴─────────────────────────┐
    │                              │
 ① ② 경량                      ③ 중량 (27 MB/s)
- 100ms 창 배치                트리거 클립 업로드
-   │ MQTT / gRPC                 │ HTTPS resumable
+ 레코드 단위 + WAL            트리거 클립 업로드
+   │ gRPC 스트림 (누적 ack)      │ HTTPS resumable
    ▼                              ▼
 Kafka 3-broker (RF=3/ISR=2)   오브젝트 스토리지 (MCAP 원본)
    │                              │
    ▼                              │
 Flink exactly-once                │
- dedup keyBy(event_id)            │
+ dedup keyBy(vehicle_id)+seq      │
  검증 → DLQ                       │
  좌표 파생 ENU→WGS84              │
    │                              │
@@ -83,11 +83,11 @@ React 대시보드
 |---|---|
 | 대역폭 58배 차이 | **Claim-Check** — 참조만 버스로, 원본은 스토리지로 |
 | 1대도 연속 업로드 불가 | **트리거 클립** — 온보드 링버퍼 + 이벤트 앞뒤 20초만 업로드 |
-| 초당 천 건 넘는 잘린 메시지 | **시간창 배치** — 100ms 잠정 (전송 설계 영역, [잠정 노트](docs/pipeline-notes-provisional.md)) |
+| 초당 천 건 넘는 잘린 메시지 | **레코드 단위 gRPC 스트림 + 온보드 WAL** — 배치는 축적 창만큼의 유실이라 뒤집었다 ([WAL](docs/wal-design.md)) |
 | 센서 주기가 채널마다 수백 배 다름 | **타임스탬프 3종** + 키프레임 동기화 앵커 |
 | 좌표가 위경도가 아님 | **공식 원점 기반 ENU→WGS84** (§S-5) |
 | 원본이 그 자체로 재생돼야 함 | **MCAP + 캘리브레이션 내장** |
-| at-least-once인데 유실 0 증명 | **exactly-once 4단** + `event_id` 집합 대사 |
+| at-least-once인데 유실 0 증명 | **누적 ack + `seq` 슬라이딩 윈도우 dedup** — 결번이 곧 유실 ([ack·dedup](docs/ack-dedup-design.md)) |
 | 라벨 23%가 미관측 | **품질 플래그를 큐레이션 1급 축으로** |
 
 전체 문제-해결 대응은 [SDD §2–§3](docs/sdd.md)에 1:1로 정리돼 있습니다.

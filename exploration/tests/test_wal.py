@@ -224,3 +224,34 @@ def test_sigkill_during_segment_roll(tmp_path: Path) -> None:
     with Wal(wal_dir) as wal:
         seqs = [r.seq for r in wal.read_from(0)]
     assert seqs == list(range(len(seqs))), "세그먼트 경계에서 결번이 생겼다"
+
+
+def test_seq_is_never_reused_when_commit_outruns_durable_data(tmp_path):
+    """커밋 포인터가 durable 지점을 앞지르면 그 위에서 이어써야 한다.
+
+    배송기는 아직 fsync되지 않은 레코드도 보낼 수 있고, 그 ack으로 커밋 포인터가
+    durable 데이터를 앞지를 수 있다. 그때 `seq`를 재사용하면 하류 dedup이 새 레코드를
+    중복으로 버린다 — **결번이 없어서 탐지되지 않는 유실**이므로 유실보다 나쁘다.
+    """
+    root = tmp_path / "wal"
+    with Wal(root) as wal:
+        for i in range(100):
+            wal.append(f"r{i}".encode())
+    # 게이트웨이가 500까지 ack했다고 가정 — 세그먼트에는 99까지만 있다
+    (root / "COMMIT").write_bytes(struct.pack("<Q", 500))
+
+    with Wal(root) as wal:
+        assert wal.committed_seq == 500
+        assert wal.append(b"next") == 501, "seq를 재사용하면 안 된다"
+
+
+def test_read_from_sees_records_appended_without_fsync(tmp_path):
+    """append 직후 fsync 없이도 읽을 수 있어야 한다.
+
+    안 되면 배송기가 꼬리를 빠뜨리고, 그건 조용한 유실처럼 보인다.
+    """
+    with Wal(tmp_path / "wal", commit_bytes=1 << 30, commit_interval_s=1e9) as wal:
+        for i in range(100):
+            wal.append(f"r{i}".encode())
+        assert wal.stats().fsync_count == 0, "이 테스트는 fsync가 없는 상태를 봐야 한다"
+        assert [r.seq for r in wal.read_from(0)] == list(range(100))

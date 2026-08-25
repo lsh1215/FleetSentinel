@@ -222,6 +222,28 @@ N = 동시 스트림 수(§2.3).
 
 계층별로 필드·타입·제약을 고정한다. 직렬화 포맷은 이 문서 밖이다(§10).
 
+### 4.0 전송 헤더 — 모든 레코드 공통
+
+스트림에 올라가는 모든 레코드가 공유하는 셋이다. **이 3튜플이 자연 키이자 dedup 키다.**
+
+| 필드 | 타입 | 제약 | 설명 |
+|---|---|---|---|
+| `vehicle_id` | string | NOT NULL, 파티션 키 | 가상 차량 id(§2.3) |
+| `boot_id` | string(UUID) | NOT NULL, **스트림 헤더에 1회** | 온보드 로그의 생애 식별자. 로그가 사라지면 바뀐다 |
+| `seq` | long | NOT NULL, 차량별 단조 증가 | 온보드 로그가 append 시점에 발급 |
+
+`seq`는 **유일성뿐 아니라 연속성**을 준다. 결번이 곧 유실이므로 유실을 탐지할 수 있고,
+"어디까지 봤는가"를 정수로 들 수 있어 dedup 상태가 데이터 양이 아니라 차량 수에
+비례한다. 설계·실측은 [ack·dedup 설계](ack-dedup-design.md).
+
+> **`event_id`(ULID)를 제거했다.** dedup 키·멱등 upsert 키·추적 id 세 용도가 모두
+> `(vehicle_id, boot_id, seq)`로 대체된다. 3튜플은 **정렬 가능**해서 오히려 낫고,
+> 레코드당 약 22 B가 줄고, 초당 647k회의 ULID 생성이 없어진다. 근거는
+> [ack·dedup 설계](ack-dedup-design.md) §3.8.
+
+`boot_id`가 레코드가 아니라 스트림 헤더에 실리는 이유 — 한 스트림 안에서는 불변이다.
+저장 계층에서는 열로 펼쳐 3튜플을 완성한다.
+
 ### 4.1 신호 (`vehicle-signal`)
 
 레코드 하나가 **한 채널의 한 샘플**이다. 채널마다 필드가 다르므로 공통 헤더 + 채널별
@@ -229,8 +251,7 @@ N = 동시 스트림 수(§2.3).
 
 | 필드 | 타입 | 제약 | 설명 |
 |---|---|---|---|
-| `event_id` | string(ULID) | PK, 멱등키 | 재생기가 1회 발급, 재전송에도 불변 |
-| `vehicle_id` | string | NOT NULL, 파티션 키 | 가상 차량 id(§2.3) |
+| §4.0 전송 헤더 | — | PK = `(vehicle_id, boot_id, seq)` | |
 | `scene_id` | string | NOT NULL | 소속 장면 |
 | `channel` | string | NOT NULL | `zoesensors` / `ms_imu` / `pose` / `ego_pose` / … (§3.2) |
 | `sensor_time` | timestamp-micros | NOT NULL | **센서 클럭.** 정본 시간축 |
@@ -258,7 +279,7 @@ CAN 채널의 주요 값 제약:
 
 | 필드 | 타입 | 제약 | 설명 |
 |---|---|---|---|
-| `event_id` | string(ULID) | PK, 멱등키 | |
+| §4.0 전송 헤더 | — | PK = `(vehicle_id, boot_id, seq)` | |
 | `scene_id` / `sample_id` | string | NOT NULL | 장면 / 키프레임 |
 | `vehicle_id` | string | NOT NULL | 관측한 ego 차량 |
 | `sensor_time` | timestamp-micros | NOT NULL | 키프레임 시각 |
@@ -293,8 +314,9 @@ CAN 채널의 주요 값 제약:
 
 | 필드 | 타입 | 제약 | 설명 |
 |---|---|---|---|
-| `segment_id` | string(ULID) | PK | |
-| `scene_id` / `vehicle_id` | string | NOT NULL | |
+| §4.0 전송 헤더 | — | PK = `(vehicle_id, boot_id, seq)` | |
+| `segment_id` | string(ULID) | UNIQUE | **파일의 정체**다. 전송 헤더가 레코드의 정체라면 이쪽은 blob의 정체이므로 둘 다 필요하다 |
+| `scene_id` | string | NOT NULL | |
 | `blob_uri` | string | NOT NULL | 로그 파일 위치 |
 | `t_start` / `t_end` | timestamp-micros | NOT NULL | 세그먼트 시간 범위 |
 | `sensor_channels` | array\<string\> | NOT NULL | 포함 채널 목록 |

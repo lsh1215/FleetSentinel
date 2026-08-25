@@ -19,7 +19,7 @@ In one sentence:
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
 > **Status:** 🚧 **Data characterization stage** — measured what data arrives, at what scale and in what format. The ingest/ETL pipeline is not yet designed.
-> **Docs (Korean):** [System Design Document](docs/sdd.md) · [Data Design](docs/data-design.md) · [Frontend tech notes](docs/frontend-tech-notes.md) · [Ingestion design review](docs/ingestion-design-review.md) · [Provisional pipeline notes](docs/pipeline-notes-provisional.md) · [Runbook](RUN.md)
+> **Docs (Korean):** [System Design Document](docs/sdd.md) · [Data Design](docs/data-design.md) · [Frontend tech notes](docs/frontend-tech-notes.md) · [Ingestion design review](docs/ingestion-design-review.md) · [WAL design](docs/wal-design.md) · [Ack & dedup design](docs/ack-dedup-design.md) · [Provisional pipeline notes](docs/pipeline-notes-provisional.md) · [Runbook](RUN.md)
 
 > **Motivation (Prior Art).** A personal extension of **[AutoNotify](https://github.com/Qualcomm-Capstone)**, a Qualcomm-sponsored capstone on on-device real-time speeding detection. Feedback from a Qualcomm engineer at the final presentation — _"Catching events one vehicle at a time on the edge is solid work. But scale it to a real fleet and the bottleneck moves off the model and onto the ingest, storage, and refinement pipeline"_ — prompted generalizing single-vehicle event handling into a **fleet-scale multimodal sensor platform**. (Qualcomm was not involved in this extension.)
 
@@ -52,14 +52,14 @@ nuScenes real-world (1000 scenes × 20s)      [CARLA/OpenSCENARIO — augmentati
    ┌────┴─────────────────────────┐
    │                              │
 ① ② light                    ③ heavy (27 MB/s)
- 100ms window batching        triggered clip upload
-   │ MQTT / gRPC                 │ HTTPS resumable
+ per-record + WAL             triggered clip upload
+   │ gRPC stream (cumulative ack)│ HTTPS resumable
    ▼                              ▼
 Kafka 3-broker (RF=3/ISR=2)   Object storage (MCAP originals)
    │                              │
    ▼                              │
 Flink exactly-once                │
- dedup keyBy(event_id)            │
+ dedup keyBy(vehicle_id)+seq      │
  validate → DLQ                   │
  derive ENU→WGS84                 │
    │                              │
@@ -87,11 +87,11 @@ The two rejoin in the clip catalog.
 |---|---|
 | 58× bandwidth asymmetry | **Claim-Check** — references on the bus, payloads in storage |
 | Not even one vehicle can stream continuously | **Triggered clips** — onboard ring buffer, upload ±20s around events |
-| Over a thousand tiny messages/sec | **Time-window batching** — 100ms provisional (transport design, see [notes](docs/pipeline-notes-provisional.md)) |
+| Over a thousand tiny messages/sec | **Per-record gRPC stream + onboard WAL** — batching was reversed: an accumulation window is equivalent to loss ([WAL](docs/wal-design.md)) |
 | Sensor rates span hundreds-fold | **Three timestamps** + keyframe synchronization anchor |
 | Coordinates are not lat/lon | **Official-origin ENU→WGS84 conversion** |
 | Raw logs must replay standalone | **MCAP with embedded calibration** |
-| At-least-once ingest, zero-loss proof | **Four-stage exactly-once** + `event_id` set reconciliation |
+| At-least-once ingest, zero-loss proof | **Cumulative ack + `seq` sliding-window dedup** — a gap in `seq` *is* the loss ([design](docs/ack-dedup-design.md)) |
 | 23% of labels unobserved | **Quality flags as a first-class curation axis** |
 
 Full problem-to-solution mapping is in [SDD §2–§3](docs/sdd.md) (Korean).
