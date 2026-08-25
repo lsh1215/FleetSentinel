@@ -13,7 +13,9 @@
 ![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-231F20?style=flat-square&logo=apachekafka&logoColor=white)
 ![Apache Flink](https://img.shields.io/badge/Apache_Flink-E6526F?style=flat-square&logo=apacheflink&logoColor=white)
 ![Apache Iceberg](https://img.shields.io/badge/Apache_Iceberg-1F70C1?style=flat-square&logo=apacheiceberg&logoColor=white)
-![Elasticsearch](https://img.shields.io/badge/Elasticsearch-005571?style=flat-square&logo=elasticsearch&logoColor=white)
+![ClickHouse](https://img.shields.io/badge/ClickHouse-FFCC01?style=flat-square&logo=clickhouse&logoColor=black)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot_4-6DB33F?style=flat-square&logo=springboot&logoColor=white)
+![React](https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
 > **Status:** 🚧 **데이터 정의 단계** — 어떤 데이터가 어떤 규모·형식으로 들어오는지 실측 완료. 수집·ETL 파이프라인은 아직 설계하지 않았습니다.
@@ -42,15 +44,15 @@
 ## 시스템 아키텍처
 
 ```
-nuScenes 실측 (1000 scene × 20초)          [CARLA/OpenSCENARIO — 보강, Phase 8]
+nuScenes 실측 (1000 scene × 20초)      [CARLA/OpenSCENARIO — 보강, 스트레치]
         │
    ┌────┴─────────────────────────┐
    │                              │
-① ② 경량 268 KB/s            ③ 중량 27 MB/s
+① ② 경량                      ③ 중량 (27 MB/s)
  100ms 창 배치                트리거 클립 업로드
    │ MQTT / gRPC                 │ HTTPS resumable
    ▼                              ▼
-Kafka 3-broker (RF=3/ISR=2)   오브젝트 스토리지 (MCAP 세그먼트)
+Kafka 3-broker (RF=3/ISR=2)   오브젝트 스토리지 (MCAP 원본)
    │                              │
    ▼                              │
 Flink exactly-once                │
@@ -58,17 +60,18 @@ Flink exactly-once                │
  검증 → DLQ                       │
  좌표 파생 ENU→WGS84              │
    │                              │
-   ├──▶ Iceberg Bronze ◀──────────┤  (원본 MCAP + 구조화 원본)
-   ├──▶ Iceberg Silver            │
-   └──▶ Elasticsearch             │
-             │                    │
-             ▼                    ▼
-      Kibana Maps          클립 카탈로그 (Iceberg)
-      fleet 관제          scene·시간범위·blob_uri·조건태그
-                                  │
-                    ┌─────────────┴─────────────┐
-                    ▼                           ▼
-              Rerun 센서 재생          학습셋 스냅샷 (time travel)
+   ▼                              │
+ClickHouse ◀──── blob_uri 참조 ────┘
+ 신호·인지 시계열 · 클립 카탈로그
+   │
+   ▼
+Spring Boot 4 API  (REST 질의 + SSE 실시간 푸시)
+   │
+   ▼
+React 대시보드
+ ├─ MapLibre     fleet 지도
+ ├─ uPlot        신호 시계열
+ └─ Rerun 웹뷰어  센서 재생 (카메라 6대 · 점군 · 3D 박스)
 ```
 
 핵심은 **경량·중량 경로 분리(Claim-Check)** 입니다. 메시지 버스에는 참조와 메타데이터만
@@ -91,13 +94,22 @@ Flink exactly-once                │
 
 ## 기술 스택
 
-**수집·처리** — Apache Kafka (KRaft, 3-broker RF=3/ISR=2) · Apache Flink 2.0 (Java 21, exactly-once) · MQTT / gRPC
+| 계층 | 채택 | 버전 |
+|---|---|---|
+| 스트림 버스 | Apache Kafka (KRaft, 3-broker RF=3/ISR=2) | 4.x |
+| 스트림 처리 | Apache Flink — exactly-once | 2.3 / Java 17 |
+| 원시 로그 | 오브젝트 스토리지 + **MCAP** | — |
+| 저장·질의 | **ClickHouse** | 26.3 LTS |
+| API | **Spring Boot** | 4.0 / Java 21 |
+| 프론트엔드 | React + Vite · **MapLibre GL** · uPlot · **Rerun 웹뷰어** | — |
+| 실시간 푸시 | SSE | — |
 
-**저장** — Apache Iceberg (Bronze/Silver) · MinIO / GCS (MCAP 원본) · **MCAP** (로보틱스 표준 로그 컨테이너)
+**채택하지 않은 것** — Elasticsearch·Kibana(지리 인덱스가 불필요한 규모 + 자체 대시보드로
+대체), 데이터 웨어하우스(time travel 7일 상한으로 학습셋 버저닝 불가), Iceberg(스냅샷
+버저닝이 실제로 필요해질 때까지 보류). 근거는 [SDD §4.1](docs/sdd.md).
 
-**서빙** — Elasticsearch + Kibana Maps (fleet 관제) · **Rerun** (멀티모달 센서 재생, MIT/Apache-2.0)
-
-**원천** — nuScenes (실측, 보스턴·싱가포르) · CARLA + OpenSCENARIO (시나리오 보강, 스트레치)
+Java 버전이 모듈마다 다르다 — Spring Boot 4는 Java 17~25를 지원하지만 Flink 2.3은 Java 17이
+기본이고 21은 실험적입니다. 그래서 API는 Java 21, Flink 잡은 Java 17로 나눕니다.
 
 ## 검증
 
@@ -116,15 +128,14 @@ Flink exactly-once                │
 
 | 단계 | 범위 | 상태 |
 |---|---|---|
-| P0 | 로컬 인프라 (Kafka HA·Flink·Iceberg·ES·Kibana) | ✅ |
+| P0 | 로컬 인프라 (Kafka HA · Flink · 오브젝트 스토리지) | ✅ |
 | **P1** | **데이터 정의** — 규모·형식 실측, 좌표계 규명, 무손실 검증 | ✅ |
 | P2 | 스키마 3종 확정 · 배치 재생기 → Kafka | 다음 |
-| P3 | Flink 파이프라인 (dedup·검증·DLQ·싱크) | |
-| P4 | Claim-Check · 클립 카탈로그 | |
-| P5 | 관제 (Kibana fleet 지도 + Rerun) | |
-| P6 | 데이터엔진 (시나리오 마이닝 · 학습셋 스냅샷) | |
-| P7 | 프로토콜 계층 (MQTT / gRPC) | |
-| P8 | CARLA 보강 (스트레치) | |
+| P3 | Flink 파이프라인 · ClickHouse 적재 | |
+| P4 | Spring Boot API · React 대시보드 | |
+| P5 | 데이터엔진 (시나리오 마이닝 · 학습셋 스냅샷) | |
+| P6 | 프로토콜 계층 (MQTT / gRPC) | |
+| P7 | CARLA 보강 (스트레치) | |
 
 ## 알려진 한계
 
@@ -142,7 +153,7 @@ Flink exactly-once                │
 FleetSentinel/
 ├── exploration/      # (Python) P1 데이터 탐색 — 측정·검증·재생 도구 (파이프라인 구현 아님)
 ├── flink-pipeline/   # (Java) Flink 스트림 처리 — P3에서 재작성
-├── infra/            # docker-compose (Kafka·Flink·Iceberg·ES·Kibana·MinIO)
+├── infra/            # docker-compose (Kafka · Flink · ClickHouse · MinIO)
 ├── schemas/          # Avro 정본 스키마
 ├── scripts/          # 인프라 스모크 · Kafka HA 데모
 └── docs/             # sdd.md · data-design.md

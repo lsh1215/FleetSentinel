@@ -13,7 +13,9 @@ In one sentence:
 ![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-231F20?style=flat-square&logo=apachekafka&logoColor=white)
 ![Apache Flink](https://img.shields.io/badge/Apache_Flink-E6526F?style=flat-square&logo=apacheflink&logoColor=white)
 ![Apache Iceberg](https://img.shields.io/badge/Apache_Iceberg-1F70C1?style=flat-square&logo=apacheiceberg&logoColor=white)
-![Elasticsearch](https://img.shields.io/badge/Elasticsearch-005571?style=flat-square&logo=elasticsearch&logoColor=white)
+![ClickHouse](https://img.shields.io/badge/ClickHouse-FFCC01?style=flat-square&logo=clickhouse&logoColor=black)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot_4-6DB33F?style=flat-square&logo=springboot&logoColor=white)
+![React](https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
 > **Status:** 🚧 **Data characterization stage** — measured what data arrives, at what scale and in what format. The ingest/ETL pipeline is not yet designed.
@@ -45,15 +47,15 @@ N concurrent streams**, not N distinct real vehicles.
 ## Architecture
 
 ```
-nuScenes real-world (1000 scenes × 20s)      [CARLA/OpenSCENARIO — augmentation, Phase 8]
+nuScenes real-world (1000 scenes × 20s)      [CARLA/OpenSCENARIO — augmentation]
         │
    ┌────┴─────────────────────────┐
    │                              │
-① ② light  268 KB/s          ③ heavy  27 MB/s
+① ② light                    ③ heavy (27 MB/s)
  100ms window batching        triggered clip upload
    │ MQTT / gRPC                 │ HTTPS resumable
    ▼                              ▼
-Kafka 3-broker (RF=3/ISR=2)   Object storage (MCAP segments)
+Kafka 3-broker (RF=3/ISR=2)   Object storage (MCAP originals)
    │                              │
    ▼                              │
 Flink exactly-once                │
@@ -61,17 +63,18 @@ Flink exactly-once                │
  validate → DLQ                   │
  derive ENU→WGS84                 │
    │                              │
-   ├──▶ Iceberg Bronze ◀──────────┤
-   ├──▶ Iceberg Silver            │
-   └──▶ Elasticsearch             │
-             │                    │
-             ▼                    ▼
-      Kibana Maps          Clip catalog (Iceberg)
-      fleet monitoring    scene · time range · blob_uri · tags
-                                  │
-                    ┌─────────────┴─────────────┐
-                    ▼                           ▼
-              Rerun playback          Training-set snapshot
+   ▼                              │
+ClickHouse ◀──── blob_uri ref ────┘
+ signal/perception time series · clip catalog
+   │
+   ▼
+Spring Boot 4 API  (REST + SSE live push)
+   │
+   ▼
+React dashboard
+ ├─ MapLibre      fleet map
+ ├─ uPlot         signal time series
+ └─ Rerun viewer  sensor replay (6 cameras · point cloud · 3D boxes)
 ```
 
 The core idea is **separating light and heavy paths (Claim-Check)**. Only references and
@@ -95,13 +98,23 @@ Full problem-to-solution mapping is in [SDD §2–§3](docs/sdd.md) (Korean).
 
 ## Stack
 
-**Ingest & processing** — Apache Kafka (KRaft, 3-broker RF=3/ISR=2) · Apache Flink 2.0 (Java 21, exactly-once) · MQTT / gRPC
+| Layer | Choice | Version |
+|---|---|---|
+| Stream bus | Apache Kafka (KRaft, 3-broker RF=3/ISR=2) | 4.x |
+| Stream processing | Apache Flink — exactly-once | 2.3 / Java 17 |
+| Raw logs | Object storage + **MCAP** | — |
+| Storage & query | **ClickHouse** | 26.3 LTS |
+| API | **Spring Boot** | 4.0 / Java 21 |
+| Frontend | React + Vite · **MapLibre GL** · uPlot · **Rerun web viewer** | — |
+| Live push | SSE | — |
 
-**Storage** — Apache Iceberg (Bronze/Silver) · MinIO / GCS (MCAP originals) · **MCAP** (the robotics-standard log container)
+**Not adopted** — Elasticsearch/Kibana (spatial indexing is pointless at our row counts, and a
+custom dashboard replaces Kibana), a data warehouse (a 7-day time-travel ceiling makes
+training-set versioning impossible), Iceberg (deferred until snapshot versioning is actually
+needed). Rationale in [SDD §4.1](docs/sdd.md).
 
-**Serving** — Elasticsearch + Kibana Maps (fleet monitoring) · **Rerun** (multimodal sensor playback, MIT/Apache-2.0)
-
-**Sources** — nuScenes (real-world, Boston & Singapore) · CARLA + OpenSCENARIO (scenario augmentation, stretch)
+Java versions differ per module: Spring Boot 4 supports Java 17–25, but Flink 2.3 defaults to
+Java 17 with 21 still experimental. So the API runs on Java 21 and the Flink job on Java 17.
 
 ## Verification
 
@@ -120,15 +133,14 @@ decisive one: matching nuScenes' own labels exactly requires all five transform 
 
 | Phase | Scope | Status |
 |---|---|---|
-| P0 | Local infrastructure (Kafka HA, Flink, Iceberg, ES, Kibana) | ✅ |
+| P0 | Local infrastructure (Kafka HA, Flink, object storage) | ✅ |
 | **P1** | **Data characterization** — scale/format measurement, coordinate system, losslessness | ✅ |
 | P2 | Schema finalization · batching replayer → Kafka | next |
-| P3 | Flink pipeline (dedup, validation, DLQ, sinks) | |
-| P4 | Claim-Check · clip catalog | |
-| P5 | Monitoring (Kibana fleet map + Rerun) | |
-| P6 | Data engine (scenario mining, training-set snapshots) | |
-| P7 | Protocol layer (MQTT / gRPC) | |
-| P8 | CARLA augmentation (stretch) | |
+| P3 | Flink pipeline · ClickHouse ingestion | |
+| P4 | Spring Boot API · React dashboard | |
+| P5 | Data engine (scenario mining, training-set snapshots) | |
+| P6 | Protocol layer (MQTT / gRPC) | |
+| P7 | CARLA augmentation (stretch) | |
 
 ## Known Limitations
 
@@ -146,7 +158,7 @@ Stated plainly. Full list in [SDD §4.2](docs/sdd.md).
 FleetSentinel/
 ├── exploration/      # (Python) P1 data exploration — measurement/verification tools (not a pipeline)
 ├── flink-pipeline/   # (Java) Flink stream processing — rewritten in P3
-├── infra/            # docker-compose (Kafka, Flink, Iceberg, ES, Kibana, MinIO)
+├── infra/            # docker-compose (Kafka, Flink, ClickHouse, MinIO)
 ├── schemas/          # canonical Avro schemas
 ├── scripts/          # infra smoke tests · Kafka HA demo
 └── docs/             # sdd.md · data-design.md

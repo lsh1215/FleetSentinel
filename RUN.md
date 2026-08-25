@@ -8,7 +8,7 @@
 
 ## 0. 사전 준비
 
-- Docker Desktop (메모리 8GB 이상 권장 — Kafka 3 + Flink 2 + ES + Kibana + MinIO)
+- Docker Desktop (메모리 6GB 이상 권장 — Kafka 3 + Flink 2 + ClickHouse + MinIO)
 - `make`, `bash`
 
 ## 1. 스택 기동
@@ -26,8 +26,7 @@ make ps      # 상태 확인
 | jobmanager / taskmanager | 8081 | Flink 2.0 클러스터 (잡 미배포 상태) |
 | minio | 9000 / 9001 | S3 호환 오브젝트 스토리지 (GCS 로컬 대체) |
 | iceberg-rest | 8181 | Iceberg REST 카탈로그 |
-| elasticsearch | 9200 | 서빙 인덱스 |
-| kibana | 5601 | 지도·대시보드 |
+| clickhouse | **8124**(HTTP) / 9009(네이티브) | 신호·인지 시계열, 클립 카탈로그 |
 
 ## 2. 토픽 부트스트랩
 
@@ -43,7 +42,7 @@ RF=3 / `min.insync.replicas=2`로 생성한다. 토픽 이름은 v3.0 스키마 
 make smoke
 ```
 
-전 서비스 healthy · 토픽 존재 · ES green · MinIO 버킷 · Kibana 200 응답을 단언한다.
+전 서비스 healthy · 토픽 존재 · **ClickHouse 질의·지리 함수** · MinIO 버킷 · Iceberg REST를 단언한다.
 
 ## 4. Kafka HA broker-kill 데모
 
@@ -71,7 +70,7 @@ make clean    # 볼륨·데이터까지 삭제
 | 증상 | 원인 / 조치 |
 |---|---|
 | `make up`이 healthy 대기에서 멈춤 | Docker 메모리 부족. Desktop 설정에서 8GB 이상 할당 |
-| Elasticsearch 기동 실패 | `vm.max_map_count` 부족(Linux). `sysctl -w vm.max_map_count=262144` |
+| ClickHouse HTTP 응답이 이상함 | **호스트 8123을 다른 프로세스가 점유**할 수 있어 8124로 매핑했다. `lsof -nP -iTCP:8124 -sTCP:LISTEN`으로 확인 |
 | Flink TaskManager exit 137 | OOM. Docker 메모리 상향 후 `make restart` |
 | `ha-demo` 중 ISR 미복원 | 브로커 재기동이 느린 경우. `make ps`로 상태 확인 후 재실행 |
 
@@ -79,8 +78,8 @@ make clean    # 볼륨·데이터까지 삭제
 
 [`docs/data-design.md`](docs/data-design.md) §6 기준으로 아래를 새로 만든다.
 
-1. nuScenes → MCAP 변환 + N대 가상차량 배분 재생기
-2. 스키마 3종 (`vehicle-signal` / `perception-object` / `log-segment`)
-3. Flink 파이프라인 (dedup · 검증 · DLQ · Iceberg · ES) 재작성
-4. Claim-Check 경로 (MCAP 세그먼트 → MinIO)
-5. 클립 카탈로그 + 관제/데이터엔진 서빙
+1. 스키마 3종 필드 계약 확정 (`vehicle-signal` / `perception-object` / `log-segment`)
+2. 100ms 배치 재생기 → Kafka
+3. Flink 파이프라인 (dedup · 검증 · DLQ) → **ClickHouse** 적재
+4. Claim-Check 경로 (MCAP 세그먼트 → 오브젝트 스토리지)
+5. Spring Boot 4 API + React 대시보드

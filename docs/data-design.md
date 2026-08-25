@@ -359,7 +359,8 @@ watermark를 넘겨 도착해도 `sensor_time` 파티션에 그대로 적재한�
 대권 방식으로 직접 변환하면 어떤 보정 상수도 필요 없다.** 구현은
 `exploration/fleetsentinel_ingest/geo.py`.
 
-lat/lon 순서 규약 — GeoJSON·BigQuery는 `[lon, lat]`, Elasticsearch 문자열은 `"lat,lon"`.
+lat/lon 순서 규약 — GeoJSON은 `[lon, lat]`, 대부분의 지도 라이브러리와 DB 함수는
+`(lat, lon)` 또는 `(lon, lat)` 중 하나를 고정한다. **경계를 넘을 때마다 순서를 명시한다.**
 
 ### 6.2 프레임이 셋이다 — 캘리브레이션이 필수
 

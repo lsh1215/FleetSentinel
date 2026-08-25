@@ -226,51 +226,34 @@ services:
         s3.access-key: admin
         s3.secret-key: password
 
-  # ---- Serving ----
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
-    container_name: fleet-elasticsearch
-    hostname: elasticsearch
+  # ---- 저장·질의 ----
+  # ClickHouse LTS. Elasticsearch·Kibana를 대체한다 — 근거는 docs/sdd.md §4.1 A-8.
+  # 요약: 지리 인덱스가 필요 없는 규모(수백 행)이고, 자체 대시보드가 Kibana를 대체한다.
+  clickhouse:
+    image: clickhouse:26.3   # LTS 라인. 이동 태그(:lts) 대신 명시적 핀
+    container_name: fleet-clickhouse
+    hostname: clickhouse
     networks: [fleet]
     ports:
-      - "127.0.0.1:9200:9200"
+      - "127.0.0.1:8124:8123"   # HTTP (호스트 8123은 타 프로세스가 점유할 수 있어 8124로)
+      - "127.0.0.1:9009:9000"   # 네이티브 프로토콜 (호스트 9000은 MinIO가 점유)
     environment:
-      discovery.type: single-node
-      xpack.security.enabled: "false"
-      xpack.security.http.ssl.enabled: "false"
-      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      CLICKHOUSE_DB: fleet
+      CLICKHOUSE_USER: fleet
+      CLICKHOUSE_PASSWORD: fleet
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     ulimits:
-      memlock:
-        soft: -1
-        hard: -1
+      nofile:
+        soft: 262144
+        hard: 262144
     volumes:
-      - es-data:/usr/share/elasticsearch/data
+      - clickhouse-data:/var/lib/clickhouse
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -q Ok || exit 1"]
       interval: 10s
-      timeout: 10s
+      timeout: 5s
       retries: 15
-      start_period: 20s
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.15.3
-    container_name: fleet-kibana
-    hostname: kibana
-    networks: [fleet]
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:5601:5601"
-    environment:
-      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
-      XPACK_MAPS_ENABLED: "true"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5601/api/status | grep -q '\"level\":\"available\"' || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 20
-      start_period: 40s
+      start_period: 15s
 
 networks:
   fleet:
@@ -281,5 +264,5 @@ volumes:
   kafka2-data:
   kafka3-data:
   minio-data:
-  es-data:
+  clickhouse-data:
   flink-checkpoints:

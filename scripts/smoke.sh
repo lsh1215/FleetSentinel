@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FleetSentinel — G001 스모크 테스트 (수용 기준).
-# 전 서비스 healthy + 토픽 존재 + ES green/yellow + Kibana available + MinIO 버킷 + Iceberg REST + Flink.
+# 전 서비스 healthy + 토픽 존재 + ClickHouse 질의 + MinIO 버킷 + Iceberg REST + Flink.
 # compose up 이전에는 실패(빨간불), up 이후 통과(초록불)해야 한다. TDD 게이트.
 set -uo pipefail
 
@@ -10,7 +10,7 @@ ok()   { printf '  \033[32mPASS\033[0m %s\n' "$1"; }
 bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; FAIL=1; }
 
 echo "== 1. container health =="
-for svc in kafka1 kafka2 kafka3 minio iceberg-rest jobmanager taskmanager elasticsearch kibana; do
+for svc in kafka1 kafka2 kafka3 minio iceberg-rest jobmanager taskmanager clickhouse; do
   cid=$($COMPOSE ps -q "$svc" 2>/dev/null)
   if [ -z "$cid" ]; then bad "$svc not running"; continue; fi
   health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null)
@@ -33,13 +33,15 @@ for t in telemetry.raw telemetry.dlq; do
   fi
 done
 
-echo "== 3. elasticsearch =="
-es_status=$(curl -sf "http://localhost:9200/_cluster/health" 2>/dev/null | grep -o '"status":"[a-z]*"' | cut -d'"' -f4)
-case "$es_status" in green|yellow) ok "ES cluster $es_status";; *) bad "ES status=$es_status";; esac
-
-echo "== 4. kibana =="
-kb=$(curl -sf "http://localhost:5601/api/status" 2>/dev/null | grep -o '"level":"available"' | head -1)
-[ -n "$kb" ] && ok "Kibana available" || bad "Kibana not available"
+echo "== 3. clickhouse =="
+CH="http://localhost:8124/?user=fleet&password=fleet"
+ch_ver=$(curl -sf "$CH" --data "SELECT version()" 2>/dev/null)
+[ -n "$ch_ver" ] && ok "ClickHouse 질의 응답 (v$ch_ver)" || bad "ClickHouse 질의 실패"
+ch_db=$(curl -sf "$CH" --data "SELECT count() FROM system.databases WHERE name='fleet'" 2>/dev/null)
+[ "$ch_db" = "1" ] && ok "fleet 데이터베이스 존재" || bad "fleet 데이터베이스 없음"
+# 지리 함수 — Elasticsearch를 대체할 수 있는지의 근거(docs/sdd.md §4.1 A-8)
+ch_geo=$(curl -sf "$CH" --data "SELECT pointInPolygon((1.5,1.5),[(0.,0.),(3.,0.),(3.,3.),(0.,3.)])" 2>/dev/null)
+[ "$ch_geo" = "1" ] && ok "지리 함수 동작 (pointInPolygon)" || bad "지리 함수 실패"
 
 echo "== 5. minio buckets =="
 buckets=$($COMPOSE exec -T minio sh -c "mc alias set l http://localhost:9000 admin password >/dev/null 2>&1; mc ls l 2>/dev/null" || true)

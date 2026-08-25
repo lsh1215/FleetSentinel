@@ -56,8 +56,8 @@ LiDAR·레이더 5대).
 ```mermaid
 flowchart TB
     subgraph SRC["원천"]
-        NS["nuScenes 실측<br/>1000 scene x 20초"]
-        CA["CARLA / OpenSCENARIO<br/>(Phase 4, 보강)"]
+        NS["nuScenes 실측<br/>1000 scene × 20초"]
+        CA["CARLA / OpenSCENARIO<br/>(보강, 스트레치)"]
     end
 
     subgraph EDGE["차량 · 재생기"]
@@ -70,7 +70,7 @@ flowchart TB
         MQ["MQTT / gRPC"]
         UP["HTTPS resumable"]
         KFK[("Kafka 3-broker<br/>RF=3 / ISR=2")]
-        OBJ[("오브젝트 스토리지<br/>MCAP 세그먼트")]
+        OBJ[("오브젝트 스토리지<br/>MCAP 원본")]
     end
 
     subgraph PROC["처리 — Flink exactly-once"]
@@ -79,53 +79,95 @@ flowchart TB
         ENR["좌표 파생 ENU→WGS84"]
     end
 
-    subgraph STORE["레이크하우스"]
-        BR[("Bronze<br/>Iceberg + MCAP 원본")]
-        SV[("Silver<br/>Iceberg 정제")]
-        CAT[("클립 카탈로그<br/>Iceberg")]
+    subgraph STORE["저장·질의"]
+        CH[("ClickHouse<br/>신호·인지 시계열<br/>클립 카탈로그")]
     end
 
-    subgraph SERVE["서빙"]
-        ES[("Elasticsearch")]
-        KB["Kibana Maps<br/>fleet 관제"]
-        RR["Rerun<br/>센서 재생"]
-        ML["학습셋 스냅샷<br/>Iceberg time travel"]
+    subgraph API["API — Spring Boot 4"]
+        REST["REST 질의"]
+        SSE["SSE 실시간 푸시"]
+    end
+
+    subgraph UI["대시보드 — React"]
+        MAP["MapLibre<br/>fleet 지도"]
+        CHART["uPlot<br/>신호 시계열"]
+        RR["Rerun 웹뷰어<br/>센서 재생"]
     end
 
     NS --> RB
     CA -.-> RB
     RB --> BATCH
     RB --> TR
-    BATCH -->|"① ② 경량 268 KB/s"| MQ
-    TR -->|"③ 중량 27 MB/s 클립"| UP
+    BATCH -->|"① ② 경량"| MQ
+    TR -->|"③ 중량 클립"| UP
     MQ --> KFK
     UP --> OBJ
     KFK --> DED --> VAL --> ENR
-    ENR --> BR
-    ENR --> SV
-    ENR --> ES
-    OBJ --> BR
-    SV --> CAT
-    OBJ -.->|blob_uri 참조| CAT
-    ES --> KB
+    ENR --> CH
+    OBJ -.->|blob_uri 참조| CH
+    CH --> REST
+    CH --> SSE
+    REST --> MAP
+    REST --> CHART
+    SSE --> MAP
     OBJ --> RR
-    CAT --> RR
-    CAT --> ML
+    REST --> RR
 ```
 
 핵심은 **경량 경로와 중량 경로의 분리(Claim-Check)** 다. 메시지 버스에는 참조와
 메타데이터만 흐르고, 무거운 센서 원본은 오브젝트 스토리지로 직행한다. 둘은 클립
 카탈로그에서 다시 만난다.
 
-### 1.5 현재 상태
+### 1.5 기술 스택
+
+버전은 **실제 확인한 값**이다. 갱신 시 호환 근거를 함께 적는다.
+
+| 계층 | 채택 | 버전 | 근거 |
+|---|---|---|---|
+| 스트림 버스 | **Apache Kafka** (KRaft) | 4.x | 3-broker RF=3 / ISR=2로 broker-level HA 실증 |
+| 스트림 처리 | **Apache Flink** | **2.3.0** (2026-06) | Java 17이 기본·권장. Java 21은 **실험적**이라 채택 안 함 |
+| 원시 로그 저장 | 오브젝트 스토리지 + **MCAP** | — | 로컬 MinIO. MCAP은 ROS 2 기본 bag 포맷 |
+| 구조화 저장·질의 | **ClickHouse** | **26.3 LTS** (`:lts` 태그) | §4.1 A-8 |
+| API | **Spring Boot** | **4.0.x** (2025-11 릴리스) | Spring Framework 7.x · Jakarta EE 11 · Servlet 6.1 |
+| 프론트엔드 | **React + Vite** | — | 대시보드는 클라이언트 앱 — SSR 불필요 |
+| 지도 | **MapLibre GL JS** | — | 오픈소스. 궤적이 많아지면 deck.gl 추가 |
+| 시계열 차트 | **uPlot** | — | 시계열 특화, 경량 |
+| 센서 재생 | **`@rerun-io/web-viewer-react`** | Rerun SDK와 동일 마이너 | 이미 만드는 `.rrd`를 그대로 임베드 |
+| 실시간 푸시 | **SSE** | — | 서버→클라이언트 단방향이면 충분. WebSocket보다 단순 |
+| 탐색 도구 | Python | 3.12 | `exploration/` — 파이프라인 아님 |
+
+#### Java 버전이 모듈마다 다르다
+
+Spring Boot 4는 **Java 17 최소 / 25까지 지원**이고, Flink 2.3은 **Java 17이 기본이며 21은
+실험적**이다. 하나로 맞추면 어느 한쪽이 손해라 모듈별로 나눈다.
+
+| 모듈 | Java | 근거 |
+|---|---|---|
+| Spring Boot API | **21** (LTS) | SB4 지원 범위 안, 라이브러리 생태계 성숙. Java 25도 LTS이고 지원되나 성숙도를 보고 21 채택 |
+| Flink 잡 | **17** | Flink 기본·권장. 실험적 지원을 감수할 이유가 없다 |
+
+#### 채택하지 않은 것
+
+| | 이유 |
+|---|---|
+| ~~Elasticsearch~~ | §4.1 **A-8** — 지리 인덱스가 불필요한 규모 + Kibana 대체됨 |
+| ~~Kibana~~ | 자체 대시보드로 대체 |
+| ~~BigQuery / 웨어하우스~~ | §4.1 **A-2** — 필요를 찾지 못함 |
+| ~~Apache Iceberg~~ | 보류 — 학습셋 스냅샷 버저닝이 실제로 필요해질 때 도입 |
+
+### 1.6 현재 상태
 
 | 단계 | 범위 | 상태 |
 |---|---|---|
-| P0 | 로컬 인프라(Kafka HA·Flink·Iceberg·ES·Kibana) | ✅ 완료 |
-| **P1** | **nuScenes 수집·MCAP 변환·Rerun 재생** | ✅ **완료** |
+| P0 | 로컬 인프라 (Kafka HA · Flink · 오브젝트 스토리지) | ✅ 완료 |
+| **P1** | **데이터 정의** — 규모·형식 실측, 좌표계 규명, 무손실 검증 | ✅ **완료** |
 | P2 | 스키마 확정 · 배치 재생기 → Kafka | 다음 |
-| P3 | Flink 파이프라인 재작성 | 대기 |
-| P4 | Claim-Check · 클립 카탈로그 · 관제 · 데이터엔진 | 대기 |
+| P3 | Flink 파이프라인 · ClickHouse 적재 | 대기 |
+| P4 | Spring Boot API · React 대시보드 | 대기 |
+| P5 | 데이터엔진 (시나리오 마이닝 · 학습셋 스냅샷) | 대기 |
+
+인프라는 §1.5 결정에 맞춰 정리됐다 — Elasticsearch·Kibana를 제거하고 ClickHouse 26.3 LTS를
+투입해 기동·질의·지리 함수를 실측 확인했다. Spring Boot·프론트엔드는 P4에서 추가한다.
 
 ---
 
@@ -189,7 +231,7 @@ flowchart TB
 #### P-5. 좌표가 위경도가 아니다
 
 `ego_pose.translation`은 **지역 지도의 ENU 로컬 미터 좌표**이고 z는 항상 0이다.
-Kibana Maps는 WGS84 `geo_point`를 요구한다. 커뮤니티에는 "보스턴은 1.35배 스케일링이
+지도 표시는 WGS84 위경도를 요구한다. 커뮤니티에는 "보스턴은 1.35배 스케일링이
 필요하다"는 정체 불명의 보정이 떠돈다.
 
 #### P-6. 원본 로그가 그 자체로 재생 가능해야 한다 (R-2)
@@ -389,17 +431,44 @@ P-9의 측정(활성 강우 1/10)이 이 루프를 **가설이 아니라 실측�
 
 **기각 이유**: 27 MB/s × N을 브로커가 감당하지 못한다. 단순함의 이점이 물리적 한계 앞에서 무의미하다.
 
-#### A-2. 시계열 DB(Prometheus/InfluxDB)에 저장
+#### A-2. 시계열 DB 또는 웨어하우스에 전부 저장
 
-| | TSDB | **Iceberg + 오브젝트 스토리지 (채택)** |
+"오브젝트 스토리지 없이 DB 하나로 끝낼 수 없나"에 대한 답이다. 두 갈래로 나뉜다.
+
+**A-2a. 시계열 DB (Prometheus / InfluxDB)**
+
+| | TSDB | **채택안** |
 |---|---|---|
-| 스칼라 집계 | 우수 | 보통 |
-| 개별 이벤트 정체성 | 없음 — 멱등키·감사 개념 부재 | `event_id` 단위 대사 가능 |
-| 지오공간 | 위경도를 독립 시계열로만 취급 | `geo_point` 색인 |
-| 원본 보존 | 다운샘플 후 폐기가 전제 | 무손실 |
+| 스칼라 집계 | 우수 | 우수 (ClickHouse) |
+| **개별 이벤트 정체성** | 없음 — 멱등키·감사 개념 부재 | `event_id` 단위 대사 가능 |
+| 지오공간 | 위경도를 독립 시계열로만 취급 | 좌표 쌍으로 유지 |
+| 원본 보존 | **다운샘플 후 폐기가 전제** | 무손실 |
 
-**기각 이유**: 카디널리티 때문이 아니다(500대 × 스칼라 8개는 TSDB에 부담이 아니다).
+**기각 이유**: 카디널리티 때문이 아니다(수백 스트림 × 스칼라 몇 개는 TSDB에 부담이 아니다).
 **개별 이벤트의 정체성과 유실 0 증명**이 이 프로젝트의 핵심 논지인데 TSDB는 그 모델이 아니다.
+
+**A-2b. 데이터 웨어하우스에 전부 적재**
+
+원시 센서가 전체 데이터의 **98.3%** 이고 JPEG·점군 같은 **바이너리 블롭**이다. 웨어하우스에
+넣을 수 있느냐가 아니라 **넣을 이유가 없다** — SQL로 픽셀을 조회하지 않는다. 조회는 "이 클립
+파일을 가져와 모델이나 뷰어에 먹인다"이고 그건 오브젝트 스토리지의 일이다.
+
+남는 질문은 **구조화 계층(1.7%)** 인데, 여기서도 웨어하우스만으로는 부족하다.
+
+| | 웨어하우스 단독 | **오브젝트 스토리지 + ClickHouse (채택)** |
+|---|---|---|
+| 비용 | 관리형 활성 저장 ≈ 오브젝트 스토리지 Standard | 콜드 계층으로 내리면 **3~16배 저렴** |
+| **데이터셋 버저닝** | **BigQuery time travel 최대 7일** — 그 이상 늘릴 수 없다 | 스냅샷 보존 기간을 직접 정함 |
+| ML 학습 읽기 | export 잡 필요 (비용·신선도) | Parquet 직접 읽기 |
+| 재처리 | 컴퓨트 과금 | 배치 재읽기가 저렴 |
+| 블롭과의 결합 | 두 시스템 조인 | 같은 스토리지에 공존 |
+
+**기각 이유**: 비용은 결정 요인이 **아니다**(활성 저장 단가가 거의 같다). 결정타는
+**데이터셋 버저닝**이다. 이 프로젝트의 목표에 "학습셋을 재현 가능하게 고정한다"가 있는데
+웨어하우스의 time travel 상한(7일)으로는 그 요구 자체가 성립하지 않는다.
+
+**웨어하우스가 옳았을 경우**: BI 도구를 붙여야 하거나, 팀이 SQL만 쓰거나, 쿼리당 과금의
+운영 단순함이 중요하다면 맞다. 현재 요구에 셋 다 없다.
 
 #### A-3. 로그 포맷으로 rosbag2(sqlite3) 또는 Parquet 직접
 
@@ -450,6 +519,61 @@ rosbag2 sqlite3는 ROS 밖 생태계가 얇다. 다만 **Silver의 구조화 데
 **기각 이유**: 레코드가 342바이트에 불과해 브로커 오버헤드가 페이로드를 압도한다(P-3).
 배치의 대가는 창 크기만큼의 추가 지연이며, 관제 요구(R-3)에서 100ms는 무시 가능하다. 배치의 대가는 **최대 100ms 지연 추가**이며, 관제 요구
 (R-3)에서 100ms는 무시 가능하다.
+
+#### A-8. 서빙 저장소로 Elasticsearch
+
+| | Elasticsearch | **ClickHouse (채택)** |
+|---|---|---|
+| 시계열 집계 | 느림 | **5배 이상 빠름** |
+| 저장 효율 | 기준 | **12~19배 적음** |
+| 지리 질의 | **성숙** — `geo_point`/`geo_shape`, 반경·폴리곤 인덱스 | 함수만 (`geoDistance`·`pointInPolygon`·H3·geohash), **공간 인덱스 없음** |
+| 전문 검색 | **강함** | 문자열 함수 수준 |
+| 개별 이벤트 정체성 | `doc_id` upsert | `ReplacingMergeTree` |
+
+**기각 이유**: ES를 넣었던 근거가 둘인데 **둘 다 무너졌다.**
+
+1. **지리 인덱스** — 공간 인덱스는 수백만 지점을 검색할 때 값어치를 한다. 우리 질의는
+   "차량 N대 현재 위치"(수백 행)와 "클립 카탈로그 검색"(1,000행)이다. **풀스캔이
+   무의미하게 빠른 규모**라 인덱스가 벌어들이는 것이 없다.
+2. **Kibana** — 자체 대시보드(§1.5)를 만들면 이 이유가 사라진다. 사실 ES를 넣은 가장 큰
+   동기가 Kibana였다.
+
+주 워크로드가 시계열·집계이므로 ClickHouse가 정면으로 유리하다.
+
+**ES가 여전히 옳았을 경우**: 수백만 궤적 지점에 복잡한 폴리곤 검색이 필요하거나 자유 텍스트
+전문 검색이 핵심 요구라면 ES가 맞다. 현재 요구에 둘 다 없다.
+
+#### A-9. Flink를 걷어내고 ClickHouse Kafka 엔진으로 직접 적재
+
+| | ClickHouse Kafka 엔진 | **Flink (유지)** |
+|---|---|---|
+| 전달 보장 | at-least-once | **exactly-once** (체크포인트 + 2PC) |
+| 중복 제거 | `ReplacingMergeTree` — **머지 시점**에 제거, 그 전엔 중복 노출(`FINAL` 필요) | 상태 기반 `keyBy(event_id)` + TTL |
+| DLQ 라우팅 | 별도 구현 | side output 4분류 |
+| 경량·중량 경로 fork | 어려움 | 한 잡에서 분기 |
+| 운영 복잡도 | **낮음** | 높음 |
+
+**유지 이유**: 이 프로젝트의 핵심 논지가 "유실 0 · 중복 0을 증명한다"이고 Flink가 그 자리를
+실제로 벌어들인다. DLQ 4분류와 다중 싱크 분기도 Flink 쪽이 자연스럽다.
+
+**정직한 단서**: 지금 스택에서 **가장 큰 단순화 여지가 Flink를 빼는 것**이다.
+`ReplacingMergeTree`만으로도 실용적으로는 중복이 제거된다. "exactly-once를 증명하는 것"이
+목표가 아니라면 Flink는 과설계다. 이 프로젝트에서는 그것이 목표라 유지한다.
+
+#### A-10. API 서버를 Python(FastAPI)으로
+
+| | FastAPI | **Spring Boot 4 (채택)** |
+|---|---|---|
+| 언어 수 | 2개 유지 (Java, TypeScript) | **3개로 증가** |
+| 기존 자산 재사용 | `exploration/`의 Python 활용 | 없음 |
+| 생태계 | 충분 | 충분 |
+
+**순수 기술 판단이면 FastAPI가 단순하다.** 언어가 하나 덜 늘고 이미 Python이 있다.
+
+**그럼에도 Spring Boot를 채택하는 이유는 기술적이 아니라 목적적이다** — 이 저장소는 백엔드
+직군을 겨냥한 포트폴리오이고, 국내 백엔드 채용에서 Spring Boot가 사실상 기준이다.
+**그 이유를 기술적 근거로 위장하지 않고 그대로 적는다.** 기술만 보면 언어를 하나 더 늘리는
+비용이 있고, 그 비용을 목적을 위해 지불하는 선택이다.
 
 ### 4.2 한계 (Not Covered)
 

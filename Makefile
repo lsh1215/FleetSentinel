@@ -2,7 +2,7 @@
 # 사용: make up → make topics → make smoke   (절차는 RUN.md)
 #
 # v3.0 전환 중: 자율주행 멀티모달 파이프라인(생성기·Flink 잡·서빙)은 재작성 대기.
-# 현재 남아 있는 것은 도메인 무관 인프라 계층뿐이다. 설계 = docs/data-design-v3.md
+# 현재 남아 있는 것은 도메인 무관 인프라 계층뿐이다. 설계 = docs/sdd.md
 COMPOSE := docker compose -f infra/docker-compose.yml
 export COMPOSE
 
@@ -38,7 +38,7 @@ logs: ## 로그 팔로우 (make logs S=kafka1)
 topics: ## Kafka 토픽 부트스트랩 (RF=3 / min.insync.replicas=2)
 	bash scripts/create-topics.sh
 
-smoke: ## 인프라 수용 스모크 테스트 (전 서비스 healthy + 토픽 + ES + MinIO + Kibana)
+smoke: ## 인프라 수용 스모크 테스트 (전 서비스 healthy + 토픽 + ClickHouse + MinIO)
 	bash scripts/smoke.sh
 
 ha-demo: ## Kafka HA broker-kill 데모 (ADR-009, 별도 토픽 사용)
