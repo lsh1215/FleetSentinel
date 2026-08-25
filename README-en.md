@@ -19,7 +19,7 @@ In one sentence:
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
 > **Status:** 🚧 **Data characterization stage** — measured what data arrives, at what scale and in what format. The ingest/ETL pipeline is not yet designed.
-> **Docs (Korean):** [System Design Document](docs/sdd.md) · [Data Design](docs/data-design.md) · [Provisional pipeline notes](docs/pipeline-notes-provisional.md) · [Runbook](RUN.md)
+> **Docs (Korean):** [System Design Document](docs/sdd.md) · [Data Design](docs/data-design.md) · [Frontend tech notes](docs/frontend-tech-notes.md) · [Provisional pipeline notes](docs/pipeline-notes-provisional.md) · [Runbook](RUN.md)
 
 > **Motivation (Prior Art).** A personal extension of **[AutoNotify](https://github.com/Qualcomm-Capstone)**, a Qualcomm-sponsored capstone on on-device real-time speeding detection. Feedback from a Qualcomm engineer at the final presentation — _"Catching events one vehicle at a time on the edge is solid work. But scale it to a real fleet and the bottleneck moves off the model and onto the ingest, storage, and refinement pipeline"_ — prompted generalizing single-vehicle event handling into a **fleet-scale multimodal sensor platform**. (Qualcomm was not involved in this extension.)
 
@@ -156,6 +156,7 @@ Stated plainly. Full list in [SDD §4.2](docs/sdd.md).
 
 ```
 FleetSentinel/
+├── frontend/         # (React) ops console — map, time series, clip search, sensor replay
 ├── exploration/      # (Python) P1 data exploration — measurement/verification tools (not a pipeline)
 ├── flink-pipeline/   # (Java) Flink stream processing — rewritten in P3
 ├── infra/            # docker-compose (Kafka, Flink, ClickHouse, MinIO)

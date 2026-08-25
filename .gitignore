@@ -51,3 +51,11 @@ data/
 *.mcap
 *.rrd
 nuscenes/
+
+# === 프론트엔드 ===
+frontend/node_modules/
+frontend/dist/
+# 실데이터에서 생성한 개발용 픽스처·재생 파일 (nuScenes 비상업 라이선스)
+frontend/public/fixture/
+frontend/public/rrd/
+*.tsbuildinfo

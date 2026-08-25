@@ -19,7 +19,7 @@
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
 > **Status:** 🚧 **데이터 정의 단계** — 어떤 데이터가 어떤 규모·형식으로 들어오는지 실측 완료. 수집·ETL 파이프라인은 아직 설계하지 않았습니다.
-> **문서:** [System Design Document](docs/sdd.md) · [데이터 설계](docs/data-design.md) · [파이프라인 잠정 노트](docs/pipeline-notes-provisional.md) · [실행 절차](RUN.md)
+> **문서:** [System Design Document](docs/sdd.md) · [데이터 설계](docs/data-design.md) · [프론트엔드 기술 정리](docs/frontend-tech-notes.md) · [파이프라인 잠정 노트](docs/pipeline-notes-provisional.md) · [실행 절차](RUN.md)
 
 > **Motivation (Prior Art).** Qualcomm 기업 연계 캡스톤 **[AutoNotify](https://github.com/Qualcomm-Capstone)**(On-Device-AI 실시간 과속탐지)를 **개인적으로 확장**한 데이터 엔지니어링 프로젝트입니다. 발표에서 받은 현직자 피드백 — _「엣지에서 차량 한 대씩 이벤트를 잡아내는 건 잘 만들었어요. 그런데 실제 fleet 규모로 올리면 병목은 모델이 아니라 수집·저장·정제 파이프라인으로 넘어갑니다」_ — 을 계기로, 단일 차량 이벤트 처리를 **fleet 규모 멀티모달 센서 플랫폼**으로 일반화했습니다. (Qualcomm은 본 확장에 관여하지 않았습니다.)
 
@@ -151,6 +151,7 @@ Java 버전이 모듈마다 다르다 — Spring Boot 4는 Java 17~25를 지원�
 
 ```
 FleetSentinel/
+├── frontend/         # (React) 관제 대시보드 — 지도·시계열·클립 검색·센서 재생
 ├── exploration/      # (Python) P1 데이터 탐색 — 측정·검증·재생 도구 (파이프라인 구현 아님)
 ├── flink-pipeline/   # (Java) Flink 스트림 처리 — P3에서 재작성
 ├── infra/            # docker-compose (Kafka · Flink · ClickHouse · MinIO)
