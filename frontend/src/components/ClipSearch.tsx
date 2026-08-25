@@ -71,7 +71,7 @@ export function ClipSearch({ onSelect }: { onSelect: (vehicleId: string) => void
     });
 
   return (
-    <div className="panel">
+    <div className="panel clip-panel">
       <div className="panel-head">
         <h2>클립 검색</h2>
         <span className="muted">

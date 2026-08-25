@@ -6,8 +6,9 @@ import { SignalChart } from "./components/SignalChart";
 import { EventFeed } from "./components/EventFeed";
 import { VehicleList } from "./components/VehicleList";
 import { PipelineHealth } from "./components/PipelineHealth";
+import { KpiStrip } from "./components/KpiStrip";
 import { ClipSearch } from "./components/ClipSearch";
-import { SensorPanel } from "./components/SensorPanel";
+import { SensorViewer } from "./components/SensorViewer";
 
 interface VehicleMeta {
   vehicle_id: string;
@@ -19,6 +20,8 @@ interface VehicleMeta {
 export default function App() {
   const [status, setStatus] = useState<StreamStatus>("connecting");
   const [selected, setSelected] = useState<string | null>(null);
+  const [view, setView] = useState<"map" | "sensor">("map");
+  const [reloadKey, setReloadKey] = useState(0);
   const [meta, setMeta] = useState<VehicleMeta[]>([]);
   const clientRef = useRef<SseClient | null>(null);
 
@@ -72,10 +75,12 @@ export default function App() {
             <p>자율주행 fleet 관제 · 실측 nuScenes 재생</p>
           </div>
         </div>
+        <KpiStrip />
+
         <div className="top-meta">
           {selectedMeta && (
             <span className="scene">
-              <b>{selectedMeta.vehicle_id}</b> · {selectedMeta.scene_name} · {selectedMeta.location}
+              {selectedMeta.scene_name} · {selectedMeta.location}
             </span>
           )}
           <span className={`badge s-${status}`}>{status}</span>
@@ -89,16 +94,52 @@ export default function App() {
         </aside>
 
         <section className="col center">
-          <div className="map-wrap">
-            <FleetMap selectedId={selected} onSelect={setSelected} />
-            {selectedMeta && <p className="map-note">{selectedMeta.description}</p>}
+          <div className="view-tabs">
+            <button className={view === "map" ? "vt on" : "vt"} onClick={() => setView("map")}>
+              fleet 지도
+            </button>
+            <button className={view === "sensor" ? "vt on" : "vt"} onClick={() => setView("sensor")}>
+              센서 재생
+              <i>카메라 6 · LiDAR · 3D 박스</i>
+            </button>
+            {view === "sensor" && rrdUrl && (
+              <button className="ghost vt-reload" onClick={() => setReloadKey((k) => k + 1)}>
+                다시 로드
+              </button>
+            )}
           </div>
+
+          <div className="stage">
+            {/* 지도는 언마운트하지 않는다 — 다시 만들면 타일을 새로 받고 궤적이 끊긴다.
+                탭 전환은 표시 여부만 바꾼다. */}
+            <div className="stage-layer" style={{ visibility: view === "map" ? "visible" : "hidden" }}>
+              <FleetMap selectedId={selected} onSelect={setSelected} />
+              {selectedMeta && <p className="map-note">{selectedMeta.description}</p>}
+            </div>
+
+            {/* 반대로 뷰어는 탭을 벗어나면 언마운트한다 — wasm이 GPU·메모리를 계속 쥔다. */}
+            {view === "sensor" && (
+              <div className="stage-layer">
+                {rrdUrl ? (
+                  <SensorViewer rrdUrl={rrdUrl} reloadKey={reloadKey} />
+                ) : (
+                  <p className="empty">
+                    <b>{selected ?? "차량"}</b>의 재생 파일이 없다.<br />
+                    <span className="muted">
+                      <code>replay_rerun.py</code>로 <code>.rrd</code>를 만들어{" "}
+                      <code>frontend/public/rrd/</code>에 둔다.
+                    </span>
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="charts">
-            <SignalChart vehicleId={selected} metric="speed" label="속도" unit="m/s" color="#38bdf8" />
-            <SignalChart vehicleId={selected} metric="steering" label="조향각" unit="rad" color="#fbbf24" />
-            <SignalChart vehicleId={selected} metric="yawRate" label="yaw rate" unit="rad/s" color="#a78bfa" />
+            <SignalChart vehicleId={selected} metric="speed" label="속도" unit="m/s" color="#e8eaed" />
+            <SignalChart vehicleId={selected} metric="steering" label="조향각" unit="rad" color="#a8b0bd" />
+            <SignalChart vehicleId={selected} metric="yawRate" label="yaw rate" unit="rad/s" color="#7f8895" />
           </div>
-          <SensorPanel vehicleId={selected} rrdUrl={rrdUrl} />
         </section>
 
         <aside className="col right">

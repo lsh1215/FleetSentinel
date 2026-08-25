@@ -1,5 +1,14 @@
 import { useEffect, useRef } from "react";
 import uPlot from "uplot";
+
+/**
+ * 세 차트의 커서를 동기화한다.
+ *
+ * 속도·조향·yaw rate는 **상관된 신호**다. 한 차트에서 t=12.4s를 볼 때 나머지도 같은
+ * 시각을 가리켜야 "감속하면서 조향했다"를 읽을 수 있다. 차트마다 커서가 따로 움직이면
+ * 사람이 눈으로 시각을 맞춰야 하고, 그게 관제에서 가장 흔한 오독 원인이다.
+ */
+const cursorSync = uPlot.sync("signals");
 import "uplot/dist/uPlot.min.css";
 import { telemetryStore } from "../lib/telemetryStore";
 
@@ -41,9 +50,15 @@ export function SignalChart({ vehicleId, metric, label, unit, color }: Props) {
       new uPlot(
         {
           width,
-          height: 116,
+          height: 96,
           padding: [8, 8, 0, 0],
-          cursor: { show: true, x: true, y: false, drag: { x: false, y: false } },
+          cursor: {
+            show: true,
+            x: true,
+            y: false,
+            drag: { x: false, y: false },
+            sync: { key: cursorSync.key },
+          },
           legend: { show: false },
           scales: { x: { time: false } },
           axes: [
@@ -72,7 +87,7 @@ export function SignalChart({ vehicleId, metric, label, unit, color }: Props) {
     // 컨테이너 크기 변화에 맞춘다. uPlot은 자동 반응형이 아니다.
     const ro = new ResizeObserver(([entry]) => {
       const w = entry?.contentRect.width ?? 0;
-      if (w > 0) plotRef.current?.setSize({ width: w, height: 116 });
+      if (w > 0) plotRef.current?.setSize({ width: w, height: 96 });
     });
     ro.observe(host);
 

@@ -49,7 +49,7 @@ export function PipelineHealth({ streamStatus }: { streamStatus: string }) {
   const dlqBad = (health?.dlq_count ?? 0) > 0;
 
   return (
-    <div className="panel">
+    <div className="panel health-panel">
       <div className="panel-head">
         <h2>파이프라인</h2>
         <span className={`badge s-${streamStatus}`}>{streamStatus}</span>

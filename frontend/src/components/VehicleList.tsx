@@ -19,7 +19,7 @@ export function VehicleList({
   const vehicles = telemetryStore.listVehicles();
 
   return (
-    <div className="panel">
+    <div className="panel vehicle-panel">
       <div className="panel-head">
         <h2>차량</h2>
         <span className="muted">{vehicles.length}대</span>

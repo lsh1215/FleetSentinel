@@ -50,9 +50,9 @@ export function FleetMap({ selectedId, onSelect }: Props) {
     map.on("load", () => {
       // 데모 베이스맵을 관제 화면에 맞게 어둡게 덮는다.
       for (const layer of map.getStyle().layers ?? []) {
-        if (layer.type === "background") map.setPaintProperty(layer.id, "background-color", "#0b1220");
-        if (layer.type === "fill") map.setPaintProperty(layer.id, "fill-color", "#131c2e");
-        if (layer.type === "line") map.setPaintProperty(layer.id, "line-color", "#1e2a42");
+        if (layer.type === "background") map.setPaintProperty(layer.id, "background-color", "#0d0f13");
+        if (layer.type === "fill") map.setPaintProperty(layer.id, "fill-color", "#15181e");
+        if (layer.type === "line") map.setPaintProperty(layer.id, "line-color", "#1f242c");
       }
 
       map.addSource("trails", { type: "geojson", data: EMPTY });
@@ -60,47 +60,105 @@ export function FleetMap({ selectedId, onSelect }: Props) {
         id: "trails",
         type: "line",
         source: "trails",
+        layout: { "line-cap": "round", "line-join": "round" },
         paint: {
-          "line-color": ["case", ["get", "selected"], "#5eead4", "#2f6f68"],
-          "line-width": ["case", ["get", "selected"], 3, 1.5],
-          "line-opacity": 0.85,
+          "line-color": ["case", ["get", "selected"], "#e8eaed", "#5a6473"],
+          // 줌에 따라 굵기를 보간한다. 고정 굵기면 줌아웃 시 화면이 선으로 덮인다.
+          "line-width": [
+            "interpolate", ["linear"], ["zoom"],
+            10, ["case", ["get", "selected"], 1.5, 0.6],
+            16, ["case", ["get", "selected"], 3, 1.4],
+          ],
+          "line-opacity": ["case", ["get", "selected"], 0.9, 0.35],
         },
       });
 
       map.addSource("vehicles", { type: "geojson", data: EMPTY });
+
+      // 경보 상태만 후광을 준다. 평상시엔 장식을 넣지 않는다.
       map.addLayer({
-        id: "vehicle-halo",
+        id: "vehicle-alert",
         type: "circle",
         source: "vehicles",
+        filter: ["get", "alert"],
         paint: {
-          "circle-radius": ["case", ["get", "selected"], 16, 11],
-          "circle-color": ["case", ["get", "harsh"], "#ef4444", "#38bdf8"],
-          "circle-opacity": 0.18,
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 8, 16, 18],
+          "circle-color": "#d94a3d",
+          "circle-opacity": 0.22,
         },
       });
+
       map.addLayer({
         id: "vehicles",
         type: "circle",
         source: "vehicles",
         paint: {
-          "circle-radius": ["case", ["get", "selected"], 7, 5],
-          "circle-color": ["case", ["get", "harsh"], "#ef4444", "#38bdf8"],
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#0b1220",
+          // 줌아웃하면 점이 작아져 뭉침이 덜 보인다.
+          "circle-radius": [
+            "interpolate", ["linear"], ["zoom"],
+            9, ["case", ["get", "selected"], 4, 2.5],
+            13, ["case", ["get", "selected"], 6, 4],
+            17, ["case", ["get", "selected"], 8, 5.5],
+          ],
+          "circle-color": [
+            "case",
+            ["get", "alert"], "#d94a3d",
+            ["get", "selected"], "#e8eaed",
+            "#8b95a5",
+          ],
+          "circle-stroke-width": ["case", ["get", "selected"], 2, 1],
+          "circle-stroke-color": "#0d0f13",
         },
       });
+
       map.addLayer({
         id: "vehicle-labels",
         type: "symbol",
         source: "vehicles",
+        // 줌 12 미만에서는 라벨을 아예 그리지 않는다 — 그 아래는 차량이 뭉쳐
+        // 라벨이 정보를 주지 않고 화면만 가린다.
+        minzoom: 12,
         layout: {
           "text-field": ["get", "label"],
+          "text-font": ["Open Sans Regular"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 12, 9, 17, 11],
+          "text-offset": [0, 1.1],
+          "text-anchor": "top",
+          // ⚠️ 핵심 수정. true로 두면 MapLibre의 충돌 회피가 꺼져 라벨이 그대로 쌓인다.
+          "text-allow-overlap": false,
+          // 자리가 없으면 라벨만 생략하고 점은 남긴다(점까지 사라지면 차량을 놓친다).
+          "text-optional": true,
+          "text-padding": 3,
+          // 선택 차량이 우선 배치되도록 정렬 키를 준다(작을수록 우선).
+          "symbol-sort-key": ["case", ["get", "selected"], 0, ["get", "alert"], 1, 2],
+        },
+        paint: {
+          "text-color": ["case", ["get", "selected"], "#e8eaed", "#8b95a5"],
+          "text-halo-color": "#0d0f13",
+          "text-halo-width": 1.4,
+        },
+      });
+
+      // 선택 차량은 줌과 무관하게 항상 라벨을 보여준다 — 지금 보고 있는 대상이라서.
+      map.addLayer({
+        id: "vehicle-label-selected",
+        type: "symbol",
+        source: "vehicles",
+        filter: ["get", "selected"],
+        layout: {
+          "text-field": ["get", "label"],
+          "text-font": ["Open Sans Regular"],
           "text-size": 11,
-          "text-offset": [0, 1.4],
+          "text-offset": [0, 1.1],
           "text-anchor": "top",
           "text-allow-overlap": true,
+          "text-padding": 3,
         },
-        paint: { "text-color": "#cbd5e1", "text-halo-color": "#0b1220", "text-halo-width": 1.5 },
+        paint: {
+          "text-color": "#e8eaed",
+          "text-halo-color": "#0d0f13",
+          "text-halo-width": 1.6,
+        },
       });
 
       map.on("click", "vehicles", (e) => {
@@ -131,9 +189,9 @@ export function FleetMap({ selectedId, onSelect }: Props) {
           geometry: { type: "Point", coordinates: [v.pos[1], v.pos[0]] },
           properties: {
             vehicleId: v.vehicleId,
-            label: `${v.vehicleId}  ${(v.speedMps * 3.6).toFixed(0)}km/h`,
+            label: v.vehicleId,
             selected,
-            harsh: v.speedMps > 0 && Math.abs(v.yawRate) > 0.35,
+            alert: Math.abs(v.yawRate) > 0.35 || v.zeroLidarCount > 0,
           },
         });
         if (v.trail.length > 1) {
