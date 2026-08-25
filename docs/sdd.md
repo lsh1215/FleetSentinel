@@ -179,6 +179,8 @@ ClickHouse 클립 카탈로그 (1행 = 클립 1개)
 | 지도 | **MapLibre GL JS** | — | 오픈소스. 궤적이 많아지면 deck.gl 추가 |
 | 시계열 차트 | **uPlot** | — | 시계열 특화, 경량 |
 | 센서 재생 | **`@rerun-io/web-viewer-react`** | Rerun SDK와 동일 마이너 | 이미 만드는 `.rrd`를 그대로 임베드 |
+| 고주파 업링크 | **gRPC 스트림** (차량→게이트웨이) | — | MQTT는 프로토콜 배치가 없어 1,295 rec/s를 레코드 단위로 못 보낸다 ([검토](ingestion-design-review.md) §4.1) |
+| 저주파 업링크 | **MQTT 5.0** (`segment-ref`·상태·heartbeat) | — | 셀룰러 단절 전제 + LWT 오프라인 검출 |
 | 실시간 푸시 | **SSE** | — | 서버→클라이언트 단방향이면 충분. WebSocket보다 단순 |
 | 탐색 도구 | Python | 3.12 | `exploration/` — 파이프라인 아님 |
 
@@ -652,6 +654,19 @@ rosbag2 sqlite3는 ROS 밖 생태계가 얇다. 다만 **Silver의 구조화 데
 직군을 겨냥한 포트폴리오이고, 국내 백엔드 채용에서 Spring Boot가 사실상 기준이다.
 **그 이유를 기술적 근거로 위장하지 않고 그대로 적는다.** 기술만 보면 언어를 하나 더 늘리는
 비용이 있고, 그 비용을 목적을 위해 지불하는 선택이다.
+
+#### A-11. 클라우드 버스로 GCP Pub/Sub
+
+**기각 이유**: Flink exactly-once가 **오프셋 재생**에 의존하는데 Pub/Sub은 오프셋 모델이
+아니다. 핵심 주장("유실 0·중복 0 증명")이 약해진다. 상세 비교는
+[수집 계층 검토](ingestion-design-review.md) §4.7.
+
+#### A-12. 고주파 신호도 MQTT로 전송
+
+**기각 이유**: MQTT는 **프로토콜 수준 배치가 없다**. 1,295 rec/s를 레코드 단위로 보내려면
+초당 1,295 PUBLISH가 필요하고 in-flight window가 막는다(RTT 20ms에서도 상한 1,000 msg/s).
+애플리케이션 배치로 우회했으나 그것이 실패 입도를 132배 거칠게 만들고 처리량 문제를 숨겼다.
+상세는 [수집 계층 검토](ingestion-design-review.md) §4.1. MQTT는 저주파 채널에 남긴다.
 
 ### 4.2 한계 (Not Covered)
 
