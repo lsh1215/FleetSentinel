@@ -12,13 +12,12 @@ In one sentence:
 ![Python](https://img.shields.io/badge/Python_3.12-3776AB?style=flat-square&logo=python&logoColor=white)
 ![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-231F20?style=flat-square&logo=apachekafka&logoColor=white)
 ![Apache Flink](https://img.shields.io/badge/Apache_Flink-E6526F?style=flat-square&logo=apacheflink&logoColor=white)
-![Apache Iceberg](https://img.shields.io/badge/Apache_Iceberg-1F70C1?style=flat-square&logo=apacheiceberg&logoColor=white)
 ![ClickHouse](https://img.shields.io/badge/ClickHouse-FFCC01?style=flat-square&logo=clickhouse&logoColor=black)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot_4-6DB33F?style=flat-square&logo=springboot&logoColor=white)
 ![React](https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
-> **Status:** 🚧 **Data characterization stage** — measured what data arrives, at what scale and in what format. The ingest/ETL pipeline is not yet designed.
+> **Status:** 🚧 **Ingest layer designed · cloud pipeline not built** — data scale/format measured (P1), the vehicle-side loss-prevention path designed and verified (WAL, ack, dedup), and the ops console built. **Kafka→Flink→ClickHouse in between is still empty.**
 > **Docs (Korean):** [System Design Document](docs/sdd.md) · [Data Design](docs/data-design.md) · [Frontend tech notes](docs/frontend-tech-notes.md) · [Ingestion design review](docs/ingestion-design-review.md) · [WAL design](docs/wal-design.md) · [Ack & dedup design](docs/ack-dedup-design.md) · [Provisional pipeline notes](docs/pipeline-notes-provisional.md) · [Runbook](RUN.md)
 
 > **Motivation (Prior Art).** A personal extension of **[AutoNotify](https://github.com/Qualcomm-Capstone)**, a Qualcomm-sponsored capstone on on-device real-time speeding detection. Feedback from a Qualcomm engineer at the final presentation — _"Catching events one vehicle at a time on the edge is solid work. But scale it to a real fleet and the bottleneck moves off the model and onto the ingest, storage, and refinement pipeline"_ — prompted generalizing single-vehicle event handling into a **fleet-scale multimodal sensor platform**. (Qualcomm was not involved in this extension.)
@@ -123,6 +122,10 @@ Java 17 with 21 still experimental. So the API runs on Java 21 and the Flink job
 | Coordinate conversion contract (pytest) | pass |
 | Lossless raw-sensor preservation | pass — 3 scenes, zero omission vs source of truth |
 | **Coordinate chain, end to end** | pass — LiDAR points inside boxes vs labels, **zero error** |
+| **WAL durability (resume after SIGKILL)** | pass — **zero gaps** in `seq`, 13 tests |
+| **Dedup idempotence & state size** | pass — state unchanged across 50× more data, 14 tests |
+| **Ack protocol (effective exactly-once after SIGKILL)** | pass — resend volume matched a prediction, 13 tests |
+| Frontend (vitest) | pass — 26 tests |
 | Kafka HA (hard broker kill) | pass — zero loss |
 | Infrastructure smoke | pass |
 
@@ -133,20 +136,28 @@ decisive one: matching nuScenes' own labels exactly requires all five transform 
 
 | Phase | Scope | Status |
 |---|---|---|
-| P0 | Local infrastructure (Kafka HA, Flink, object storage) | ✅ |
+| P0 | Local infrastructure (Kafka HA, Flink, ClickHouse, object storage) | ✅ |
 | **P1** | **Data characterization** — scale/format measurement, coordinate system, losslessness | ✅ |
-| P2 | Schema finalization · batching replayer → Kafka | next |
+| **P1.5** | **Ingest design + vehicle-side loss prevention** — WAL, cumulative ack, `seq` dedup | ✅ verified in the replayer |
+| **P1.6** | **Ops console** — map, time series, clip search, sensor replay | ✅ mock stream |
+| P2 | Schema finalization · **per-record** replayer → Kafka | next |
 | P3 | Flink pipeline · ClickHouse ingestion | |
-| P4 | Spring Boot API · React dashboard | |
-| P5 | Data engine (scenario mining, training-set snapshots) | |
-| P6 | Protocol layer (MQTT / gRPC) | |
-| P7 | CARLA augmentation (stretch) | |
+| P5 | Spring Boot API — switch the console from mock to real | |
+| P6 | Data engine (scenario mining, training-set manifests) | |
+| P7 | Protocol layer, implemented (gRPC gateway + MQTT for low-rate channels) | |
+| P8 | CARLA augmentation (stretch) | |
+
+**P1.5 and P1.6 landing before P2 was not the plan.** Revisiting the batching decision
+reshaped the whole ingest layer, and proving that design required code. The console came
+early because what the screen needs constrains what the storage schema must hold.
 
 ## Known Limitations
 
 Stated plainly. Full list in [SDD §4.2](docs/sdd.md).
 
 - **Not live monitoring.** nuScenes replay reproduces bandwidth, cadence, and format, but there is no real-vehicle integration.
+- **Vehicle-side loss prevention was verified in the replayer only.** WAL, ack, and dedup are implemented and survive SIGKILL with zero `seq` gaps, but real onboard software is out of scope, and the power-loss window (10ms group commit) remains.
+- **The console still runs on a mock stream.** It replays fixtures extracted from real nuScenes data, so the screens and load are realistic, but Kafka→Flink→ClickHouse→API is P2–P5.
 - **The source is 2 vehicles with a 20-second continuity ceiling.** "N vehicles" means N concurrent streams, not N distinct real vehicles.
 - **Infrastructure HA is out of scope.** A single-host 3-broker setup demonstrates broker-level failover only.
 - **No perception model.** Perception outputs come from nuScenes labels.
@@ -157,12 +168,12 @@ Stated plainly. Full list in [SDD §4.2](docs/sdd.md).
 ```
 FleetSentinel/
 ├── frontend/         # (React) ops console — map, time series, clip search, sensor replay
-├── exploration/      # (Python) P1 data exploration — measurement/verification tools (not a pipeline)
+├── exploration/      # (Python) measurement/verification tools + vehicle-side loss prevention (WAL, ack, dedup)
 ├── flink-pipeline/   # (Java) Flink stream processing — rewritten in P3
-├── infra/            # docker-compose (Kafka, Flink, ClickHouse, MinIO)
+├── infra/            # docker-compose (Kafka ×3, Flink, ClickHouse, MinIO, Iceberg REST)
 ├── schemas/          # canonical Avro schemas
 ├── scripts/          # infra smoke tests · Kafka HA demo
-└── docs/             # sdd.md · data-design.md
+└── docs/             # seven design documents
 ```
 
 ## Running
@@ -174,8 +185,15 @@ make smoke     # verify infrastructure
 make ha-demo   # Kafka HA broker-kill demo
 ```
 
-See [`exploration/README.md`](exploration/README.md) for the exploration tooling.
-**That directory is not a pipeline implementation** — it holds the measurement and verification tools behind the figures in these docs.
+```bash
+cd exploration && ./setup-venv.sh && PYTHONPATH=. .venv/bin/python -m pytest tests/ -q   # 82 tests
+cd frontend && npm install && npm run dev      # console (mock SSE stream)
+```
+
+See [`exploration/README.md`](exploration/README.md) and [`frontend/README.md`](frontend/README.md).
+The `exploration/` directory mixes two things: measurement tools (not promotable to production)
+and the vehicle-side loss-prevention implementation (a faithful build of the documented design,
+minus real onboard hardware).
 
 ## License
 

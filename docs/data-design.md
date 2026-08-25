@@ -544,16 +544,21 @@ lat/lon 순서 규약 — GeoJSON은 `[lon, lat]`, 대부분의 지도 라이브
 
 | 주제 | 어디에 |
 |---|---|
-| 전송 배치, 재생 모드, 처리량 목표 | [`pipeline-notes-provisional.md`](pipeline-notes-provisional.md) (잠정) |
-| 직렬화 포맷 (Avro / Protobuf / JSON) | 미정 — 전송 설계 시 |
-| 저장 계층 구조, 테이블 정의, 파티션 | 미정 — 저장 설계 시 |
+| 전송 단위·유실 방지 | **결정** — 레코드 단위 + 온보드 WAL. [`wal-design.md`](wal-design.md) · [`ingestion-design-review.md`](ingestion-design-review.md) §4.1 |
+| ack·중복 제거 | **결정** — 누적 ack + `seq` 슬라이딩 윈도우. [`ack-dedup-design.md`](ack-dedup-design.md) |
+| 프로토콜 (gRPC / MQTT / HTTPS) | **결정** — 고주파 gRPC 스트림, 저주파 MQTT, 중량 HTTPS resumable. [`ingestion-design-review.md`](ingestion-design-review.md) §4.6·§4.8 |
+| 관제 화면·시각화 도구 | **구현** — React + MapLibre + uPlot + Rerun. [`frontend-tech-notes.md`](frontend-tech-notes.md) |
+| 학습셋 버저닝 | **결정** — 불변 매니페스트(클립 id + 체크섬). Iceberg 스냅샷은 보류. [`sdd.md`](sdd.md) S-8 |
+| 처리량 목표·재생 모드 | [`pipeline-notes-provisional.md`](pipeline-notes-provisional.md) — **§2·§3만 유효**, 전송 결정은 위에서 뒤집혔다 |
+| 직렬화 포맷 (Avro / Protobuf / JSON) | 미정 — P2 |
+| 저장 계층 테이블 정의·파티션·정렬 키 | 미정 — P3 (엔진은 ClickHouse로 결정) |
 | 보존 기간·수명주기 | 미정 |
-| 프로토콜 (MQTT / gRPC / HTTPS) | 미정 |
-| 관제 화면·시각화 도구 | 미정 |
-| 학습셋 스냅샷·버저닝 메커니즘 | 미정 |
 
 **§4의 필드 계약은 확정하되 직렬화 포맷은 미정**이라는 점이 중요하다. "어떤 칸이 있고
 타입·제약이 무엇인가"는 데이터 사실이지만, "바이트로 어떻게 만드는가"는 전송 설계다.
+
+이 표의 절반이 「미정」에서 「결정」으로 바뀐 것은 데이터 정의 이후 수집 계층을 설계했기
+때문이다. **그 결정들은 이 문서로 들어오지 않는다** — 여기는 데이터 사실만 담는다.
 
 ---
 

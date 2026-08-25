@@ -1,8 +1,9 @@
 # FleetSentinel — 로컬 인프라 오케스트레이션
 # 사용: make up → make topics → make smoke   (절차는 RUN.md)
 #
-# v3.0 전환 중: 자율주행 멀티모달 파이프라인(생성기·Flink 잡·서빙)은 재작성 대기.
-# 현재 남아 있는 것은 도메인 무관 인프라 계층뿐이다. 설계 = docs/sdd.md
+# 이 Makefile은 로컬 인프라 계층만 다룬다. Kafka→Flink→ClickHouse 파이프라인은 미구현(P2·P3)이라
+# 기동해도 데이터가 흐르지 않는다. 차량 측 구현 테스트와 대시보드는 인프라 없이 돈다 — RUN.md §6·§7.
+# 설계 = docs/sdd.md
 COMPOSE := docker compose -f infra/docker-compose.yml
 export COMPOSE
 

@@ -18,6 +18,7 @@
 ## 실행
 
 ```bash
+npm test           # 순수 로직 단위 테스트 26건 (픽스처 불필요)
 npm install
 npm run dev        # http://localhost:5173
 npm run build      # 프로덕션 빌드
@@ -51,14 +52,19 @@ PYTHONPATH=. ./.venv/bin/python scripts/replay_rerun.py \
 | `GET /api/clips` | 클립 카탈로그 (조건 태그 + `blob_uri`) |
 | `GET /api/health` | Kafka lag · DLQ · 체크포인트 · ISR |
 
-신호는 **설계상 전송 단위인 100ms 배치**로 흘린다. 실측 부하가 그대로 재현된다 —
-차량 4대 기준 **초당 약 5,100 레코드 / 약 39 배치**.
+신호는 **100ms 프레임**으로 묶어 흘린다. 실측 부하가 그대로 재현된다 —
+차량 4대 기준 **초당 약 5,100 레코드 / 약 39 프레임**.
+
+> 차량→클라우드 구간에서는 애플리케이션 배치를 **폐기했다**(축적 창 = 유실 창,
+> [설계 검토](../docs/ingestion-design-review.md) §4.1). 브라우저 구간의 100ms 프레임은
+> **다른 홉의 다른 결정**이다 — 여기서 놓친 것은 ClickHouse에 남아 있고 `Last-Event-ID`로
+> 다시 받을 수 있다. 근거는 [기술 정리 Q3-1](../docs/frontend-tech-notes.md).
 
 ## 계층 구조
 
 ```
 SSE 수신  ──▶  telemetryStore (React 밖, 가변)  ──┬─▶ 지도·차트: rAF에서 직접 읽음
- 초당 39건      setState 없음                     │             (React 렌더 0회)
+ 초당 39프레임   setState 없음                     │             (React 렌더 0회)
                                                  └─▶ 목록·피드: 4Hz 스로틀 알림
                                                                (useSyncExternalStore)
 ```

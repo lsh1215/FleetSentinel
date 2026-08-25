@@ -12,13 +12,12 @@
 ![Python](https://img.shields.io/badge/Python_3.12-3776AB?style=flat-square&logo=python&logoColor=white)
 ![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-231F20?style=flat-square&logo=apachekafka&logoColor=white)
 ![Apache Flink](https://img.shields.io/badge/Apache_Flink-E6526F?style=flat-square&logo=apacheflink&logoColor=white)
-![Apache Iceberg](https://img.shields.io/badge/Apache_Iceberg-1F70C1?style=flat-square&logo=apacheiceberg&logoColor=white)
 ![ClickHouse](https://img.shields.io/badge/ClickHouse-FFCC01?style=flat-square&logo=clickhouse&logoColor=black)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot_4-6DB33F?style=flat-square&logo=springboot&logoColor=white)
 ![React](https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
-> **Status:** 🚧 **데이터 정의 단계** — 어떤 데이터가 어떤 규모·형식으로 들어오는지 실측 완료. 수집·ETL 파이프라인은 아직 설계하지 않았습니다.
+> **Status:** 🚧 **수집 계층 설계 완료 · 클라우드 파이프라인 미구현** — 데이터 규모·형식 실측(P1), 차량 측 유실 방지 경로 설계·검증(WAL·ack·dedup), 관제 대시보드 구현까지 끝났습니다. 그 사이를 잇는 **Kafka→Flink→ClickHouse가 아직 비어 있습니다.**
 > **문서:** [System Design Document](docs/sdd.md) · [데이터 설계](docs/data-design.md) · [프론트엔드 기술 정리](docs/frontend-tech-notes.md) · [수집 계층 검토](docs/ingestion-design-review.md) · [WAL 설계](docs/wal-design.md) · [ack·dedup 설계](docs/ack-dedup-design.md) · [파이프라인 잠정 노트](docs/pipeline-notes-provisional.md) · [실행 절차](RUN.md)
 
 > **Motivation (Prior Art).** Qualcomm 기업 연계 캡스톤 **[AutoNotify](https://github.com/Qualcomm-Capstone)**(On-Device-AI 실시간 과속탐지)를 **개인적으로 확장**한 데이터 엔지니어링 프로젝트입니다. 발표에서 받은 현직자 피드백 — _「엣지에서 차량 한 대씩 이벤트를 잡아내는 건 잘 만들었어요. 그런데 실제 fleet 규모로 올리면 병목은 모델이 아니라 수집·저장·정제 파이프라인으로 넘어갑니다」_ — 을 계기로, 단일 차량 이벤트 처리를 **fleet 규모 멀티모달 센서 플랫폼**으로 일반화했습니다. (Qualcomm은 본 확장에 관여하지 않았습니다.)
@@ -106,7 +105,13 @@ React 대시보드
 
 **채택하지 않은 것** — Elasticsearch·Kibana(지리 인덱스가 불필요한 규모 + 자체 대시보드로
 대체), 데이터 웨어하우스(time travel 7일 상한으로 학습셋 버저닝 불가), Iceberg(스냅샷
-버저닝이 실제로 필요해질 때까지 보류). 근거는 [SDD §4.1](docs/sdd.md).
+버저닝이 실제로 필요해질 때까지 보류 — REST 카탈로그 컨테이너만 남겨뒀습니다).
+근거는 [SDD §4.1](docs/sdd.md).
+
+Iceberg 보류에는 **값이 있습니다.** Flink의 Iceberg 싱크가 주는 체크포인트 단위 2PC 원자
+커밋을 잃고, 대신 `ReplacingMergeTree` 멱등 upsert로 닫습니다. 그러면 exactly-once가
+**쓰기 시점이 아니라 읽기 시점에 닫히므로** 질의가 `FINAL`을 써야 합니다
+([SDD L-14](docs/sdd.md)).
 
 Java 버전이 모듈마다 다르다 — Spring Boot 4는 Java 17~25를 지원하지만 Flink 2.3은 Java 17이
 기본이고 21은 실험적입니다. 그래서 API는 Java 21, Flink 잡은 Java 17로 나눕니다.
@@ -115,9 +120,13 @@ Java 버전이 모듈마다 다르다 — Spring Boot 4는 Java 17~25를 지원�
 
 | 게이트 | 결과 |
 |---|---|
-| 좌표 변환 계약 (pytest) | 통과 |
+| 좌표 변환 계약 (pytest) | 통과 — 30건 |
 | 원시 데이터 무손실 보존 | 통과 — 정본 대조 3장면 누락 0 |
 | **좌표 체인 종단 검증** | 통과 — 박스 내 LiDAR 포인트 대조 **오차 0** |
+| **WAL 내구성 (SIGKILL 후 재개)** | 통과 — `seq` 결번 **0**, 13건 |
+| **dedup 멱등·상태 크기** | 통과 — 데이터 50배에 상태 불변, 14건 |
+| **ack 프로토콜 (SIGKILL 후 결과적 exactly-once)** | 통과 — 재전송량 예측 대조, 13건 |
+| 프론트엔드 (vitest) | 통과 — 26건 |
 | Kafka HA (브로커 하드 kill) | 통과 — 유실 0 |
 | 인프라 스모크 | 통과 |
 
@@ -128,20 +137,29 @@ Java 버전이 모듈마다 다르다 — Spring Boot 4는 Java 17~25를 지원�
 
 | 단계 | 범위 | 상태 |
 |---|---|---|
-| P0 | 로컬 인프라 (Kafka HA · Flink · 오브젝트 스토리지) | ✅ |
+| P0 | 로컬 인프라 (Kafka HA · Flink · ClickHouse · 오브젝트 스토리지) | ✅ |
 | **P1** | **데이터 정의** — 규모·형식 실측, 좌표계 규명, 무손실 검증 | ✅ |
-| P2 | 스키마 3종 확정 · 배치 재생기 → Kafka | 다음 |
+| **P1.5** | **수집 계층 설계 + 온보드 유실 방지** — WAL · 누적 ack · `seq` dedup | ✅ 재생기에서 검증 |
+| **P1.6** | **관제 대시보드** — 지도 · 시계열 · 클립 검색 · 센서 재생 | ✅ 목업 스트림 |
+| P2 | 스키마 3종 확정 · **레코드 단위** 재생기 → Kafka | 다음 |
 | P3 | Flink 파이프라인 · ClickHouse 적재 | |
-| P4 | Spring Boot API · React 대시보드 | |
-| P5 | 데이터엔진 (시나리오 마이닝 · 학습셋 스냅샷) | |
-| P6 | 프로토콜 계층 (MQTT / gRPC) | |
-| P7 | CARLA 보강 (스트레치) | |
+| P5 | Spring Boot API — 대시보드를 목업에서 실 API로 전환 | |
+| P6 | 데이터엔진 (시나리오 마이닝 · 학습셋 매니페스트) | |
+| P7 | 프로토콜 계층 실구현 (gRPC 게이트웨이 + MQTT 저주파) | |
+| P8 | CARLA 보강 (스트레치) | |
+
+**P1.5·P1.6이 P2보다 먼저 끝난 것은 계획이 아니었습니다.** 배치 결정을 재검토하다 수집
+계층 전체가 바뀌었고, 그 설계를 실증하려면 코드가 필요했습니다. 대시보드는 "어떤 화면이
+필요한가"가 저장 스키마를 규정하므로 먼저 만드는 편이 나았습니다. 자세한 사정은
+[SDD §5.1](docs/sdd.md).
 
 ## 알려진 한계
 
 정직하게 남겨둡니다. 전체 목록은 [SDD §4.2](docs/sdd.md)에 있습니다.
 
 - **라이브 관제가 아닙니다.** nuScenes 재생이 대역폭·주기·형식을 재현하지만 실차량 연동은 없습니다.
+- **차량 측 유실 방지는 재생기에서만 검증했습니다.** WAL·ack·dedup을 구현해 SIGKILL 후 결번 0을 확인했지만, 실제 차량 온보드 소프트웨어는 스코프 밖입니다. 전원 손실 창(그룹 커밋 10ms)도 남아 있습니다.
+- **대시보드가 아직 목업 스트림으로 돕니다.** 실데이터에서 뽑은 픽스처를 설계상 전송 단위로 재생하므로 화면·성능은 실제와 같지만, Kafka→Flink→ClickHouse→API 경로는 P2–P5입니다.
 - **원천이 차량 2대이고 연속 구간이 20초입니다.** "N대"는 동시 스트림 N개이며 실차량 N대가 아닙니다.
 - **인프라 HA는 스코프 밖입니다.** 단일 호스트 3브로커라 broker-level failover만 실증합니다.
 - **인지 모델을 만들지 않습니다.** 인지 산출은 nuScenes 라벨을 사용합니다.
@@ -152,12 +170,12 @@ Java 버전이 모듈마다 다르다 — Spring Boot 4는 Java 17~25를 지원�
 ```
 FleetSentinel/
 ├── frontend/         # (React) 관제 대시보드 — 지도·시계열·클립 검색·센서 재생
-├── exploration/      # (Python) P1 데이터 탐색 — 측정·검증·재생 도구 (파이프라인 구현 아님)
+├── exploration/      # (Python) 데이터 측정·검증 도구 + 차량 측 유실 방지 구현(WAL·ack·dedup)
 ├── flink-pipeline/   # (Java) Flink 스트림 처리 — P3에서 재작성
-├── infra/            # docker-compose (Kafka · Flink · ClickHouse · MinIO)
+├── infra/            # docker-compose (Kafka ×3 · Flink · ClickHouse · MinIO · Iceberg REST)
 ├── schemas/          # Avro 정본 스키마
 ├── scripts/          # 인프라 스모크 · Kafka HA 데모
-└── docs/             # sdd.md · data-design.md
+└── docs/             # 설계 문서 7종 — 아래 표
 ```
 
 ## 실행
@@ -169,8 +187,25 @@ make smoke     # 인프라 검증
 make ha-demo   # Kafka HA broker-kill 데모
 ```
 
-데이터 탐색 도구는 [`exploration/README.md`](exploration/README.md)를 참고하세요.
-**이 디렉터리는 파이프라인 구현이 아닙니다** — 문서의 실측 수치를 뽑아낸 측정·검증 도구입니다.
+```bash
+cd exploration && ./setup-venv.sh && PYTHONPATH=. .venv/bin/python -m pytest tests/ -q   # 82건
+cd frontend && npm install && npm run dev      # 대시보드 (목업 SSE 스트림)
+```
+
+측정·검증 도구와 차량 측 구현은 [`exploration/README.md`](exploration/README.md),
+대시보드는 [`frontend/README.md`](frontend/README.md)를 참고하세요.
+
+### 설계 문서
+
+| 문서 | 무엇이 있는가 |
+|---|---|
+| [`docs/sdd.md`](docs/sdd.md) | 전체 시스템 설계 — 문제·해결 1:1 대응, 기각한 대안 12건, 알려진 한계 14건 |
+| [`docs/data-design.md`](docs/data-design.md) | **데이터 사실의 정본** — 실측 수치·필드 계약·시간/좌표 계약. 다른 문서는 여기를 링크만 합니다 |
+| [`docs/ingestion-design-review.md`](docs/ingestion-design-review.md) | 수집 계층 재검토 — 배치를 뒤집은 과정, Kafka/Pub/Sub·gRPC/MQTT 선택 근거 |
+| [`docs/wal-design.md`](docs/wal-design.md) | 온보드 WAL — 요구사항·문제·구현·실측 |
+| [`docs/ack-dedup-design.md`](docs/ack-dedup-design.md) | 누적 ack 프로토콜 + `seq` dedup — 상태를 124.8GB에서 350KB로 |
+| [`docs/frontend-tech-notes.md`](docs/frontend-tech-notes.md) | 프론트엔드 기술 포인트 24개 (면접 예상 질문 형식) |
+| [`docs/pipeline-notes-provisional.md`](docs/pipeline-notes-provisional.md) | 잠정 노트 — §4·§6은 재검토에서 무효가 됐습니다 |
 
 ## 라이선스
 
