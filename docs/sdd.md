@@ -53,70 +53,116 @@ LiDAR·레이더 5대).
 
 ### 1.4 시스템 아키텍처
 
+차량이 만드는 데이터는 **경량과 중량으로 갈라져 서로 다른 경로를 탄다.** 이것이 이 시스템의
+가장 중요한 구조적 결정이며, 근거는 §2 P-1·P-2와 §3 S-1이다.
+
 ```mermaid
-flowchart TB
-    subgraph SRC["원천"]
-        NS["nuScenes 실측<br/>1000 scene × 20초"]
-        CA["CARLA / OpenSCENARIO<br/>(보강, 스트레치)"]
+flowchart LR
+    V["차량 · 재생기"]
+    subgraph LIGHT["경량 경로 — 471 KB/s"]
+        direction TB
+        MQ["MQTT"] --> KFK[("Kafka")] --> FL["Flink<br/>exactly-once"] --> CH[("ClickHouse")]
     end
-
-    subgraph EDGE["차량 · 재생기"]
-        RB["온보드 링버퍼<br/>연속 기록"]
-        TR{"트리거<br/>급제동·개입·희귀"}
-        BATCH["신호 100ms 창 배치"]
+    subgraph HEAVY["중량 경로 — 27.15 MB/s"]
+        direction TB
+        UP["HTTPS resumable"] --> OBJ[("오브젝트 스토리지<br/>MCAP")]
     end
-
-    subgraph INGEST["수집"]
-        MQ["MQTT / gRPC"]
-        UP["HTTPS resumable"]
-        KFK[("Kafka 3-broker<br/>RF=3 / ISR=2")]
-        OBJ[("오브젝트 스토리지<br/>MCAP 원본")]
-    end
-
-    subgraph PROC["처리 — Flink exactly-once"]
-        DED["dedup keyBy(event_id)"]
-        VAL["검증 → DLQ"]
-        ENR["좌표 파생 ENU→WGS84"]
-    end
-
-    subgraph STORE["저장·질의"]
-        CH[("ClickHouse<br/>신호·인지 시계열<br/>클립 카탈로그")]
-    end
-
-    subgraph API["API — Spring Boot 4"]
-        REST["REST 질의"]
-        SSE["SSE 실시간 푸시"]
-    end
-
-    subgraph UI["대시보드 — React"]
-        MAP["MapLibre<br/>fleet 지도"]
-        CHART["uPlot<br/>신호 시계열"]
-        RR["Rerun 웹뷰어<br/>센서 재생"]
-    end
-
-    NS --> RB
-    CA -.-> RB
-    RB --> BATCH
-    RB --> TR
-    BATCH -->|"① ② 경량"| MQ
-    TR -->|"③ 중량 클립"| UP
-    MQ --> KFK
-    UP --> OBJ
-    KFK --> DED --> VAL --> ENR
-    ENR --> CH
-    OBJ -.->|blob_uri 참조| CH
-    CH --> REST
-    CH --> SSE
-    REST --> MAP
-    REST --> CHART
-    SSE --> MAP
-    OBJ --> RR
-    REST --> RR
+    V -->|"① 신호 ② 인지"| MQ
+    V -->|"③ 원시 센서"| UP
+    OBJ -.->|"참조만"| KFK
+    CH --> API["Spring Boot"] --> UI["React 대시보드"]
+    OBJ --> UI
 ```
 
-핵심은 **경량 경로와 중량 경로의 분리(Claim-Check)** 다. 메시지 버스에는 참조와
-메타데이터만 흐르고, 무거운 센서 원본은 오브젝트 스토리지로 직행한다. 둘은 클립
-카탈로그에서 다시 만난다.
+**원시 센서가 전체 데이터의 98.3%인데 메시지 버스를 타지 않는다.** 파일은 오브젝트
+스토리지로 직행하고, 버스에는 **"어디에 무엇이 있다"는 참조만** 흐른다.
+
+#### 경량 경로 — 신호·인지 산출
+
+```
+차량
+ │  ① 신호       CAN·IMU·조향·자세      432 KB/s
+ │  ② 인지 산출   3D 박스·트랙·클래스      39 KB/s
+ ▼
+100ms 창 배치            ← 레코드 132개를 메시지 1건으로 (§3 S-3)
+ │
+ ▼  MQTT (차량→클라우드)
+MQTT 브로커 ─▶ 브리지 ─▶ Kafka
+ │                        ├─ telemetry.signals      9.8 msg/s/대 · 43 KB
+ │                        ├─ telemetry.perception   2.1 msg/s/대 · ~25 KB
+ │                        ├─ telemetry.segments     클립당 1건 · <2 KB   ← 중량 경로의 참조
+ │                        └─ telemetry.dlq          0이 목표
+ ▼
+Flink (exactly-once)
+ ├─ dedup      keyBy(event_id) + 상태 TTL 30분
+ ├─ 검증        범위·쿼터니언·단조성 → 실패는 DLQ 4분류
+ └─ 파생        ENU 미터 → WGS84 위경도
+ │
+ ▼
+ClickHouse
+ ├─ 신호·인지 시계열
+ └─ 클립 카탈로그   ← segments 참조가 여기서 두 경로를 잇는다
+```
+
+**MQTT를 쓰는 이유** — 셀룰러 단절을 전제로 설계된 프로토콜이다. QoS 1 재전송, 오프라인
+버퍼, **LWT(Last Will)로 차량 오프라인 즉시 검출**. 마지막 항목은 fleet 관제에 직접 쓰인다.
+
+다만 **MQTT는 Kafka가 아니다** — 되감기가 없고 컨슈머 그룹도 없다. 그래서 브리지가 필요하다
+(EMQX·HiveMQ에 내장 기능이 있다). 로컬 개발에서는 MQTT 계층을 건너뛰고 재생기가 Kafka에
+직접 쓴다 — MQTT는 "차량→클라우드 구간을 재현한다"는 목적이고 파이프라인 검증에는
+기여하지 않는다(§5.1 P7).
+
+#### 중량 경로 — 원시 센서
+
+```
+차량
+ │  ③ 원시 센서   카메라 6 · LiDAR 1 · 레이더 5     27.15 MB/s
+ ▼
+온보드 링버퍼         ← 연속 기록, 덮어쓰기
+ │
+ ▼  트리거 발생 (급제동 · 개입 · 인지 불확실 · 희귀 상황)
+앞뒤 20~30초를 MCAP 세그먼트로 잘라냄
+ │
+ ▼  HTTPS resumable upload
+오브젝트 스토리지
+ │
+ ▼  ★ 업로드 완료 후에 발행
+telemetry.segments  { blob_uri, checksum, t_start/end, sensor_channels, calibration }
+ │
+ ▼
+Flink ─▶ ClickHouse 클립 카탈로그
+```
+
+**차량 1대의 27.15 MB/s는 LTE 실효 대역폭(약 12.5 MB/s)을 넘는다** — 한 대조차 연속 업로드가
+불가능하다. 그래서 트리거 클립이 최적화가 아니라 **물리적 필연**이다(§2 P-2).
+
+**순서가 계약이다.** 파일 업로드가 **완료된 뒤에** 참조를 발행해야 한다. 반대로 하면 아직
+존재하지 않는 파일을 가리키는 카탈로그 행이 생긴다. 체크섬을 참조에 실어 소비자가 무결성을
+검증할 수 있게 한다.
+
+**캘리브레이션이 참조에 포함된다.** 없으면 원본 로그만으로 3D 재구성이 불가능하다 — LiDAR는
+센서 프레임, 인지 박스는 글로벌 프레임이라 정렬되지 않는다([데이터 설계 §6.2](data-design.md)).
+
+#### 두 경로가 만나는 곳
+
+```
+ClickHouse 클립 카탈로그 (1행 = 클립 1개)
+┌──────────────────────────────────────────────────────────┐
+│ clip_id · t_range · location                             │
+│ 조건 태그    night / rain / peds / harsh_brake …          │  ← 경량 경로에서
+│ 인지 요약    n_objects · n_zero_lidar · max_speed         │  ← 경량 경로에서
+│ blob_uri     s3://…/scene-0061.mcap                      │  ← 중량 경로에서
+└──────────────────────────────────────────────────────────┘
+        │
+        ├─▶ 시나리오 마이닝: 조건으로 검색 → blob_uri로 원본 재생
+        └─▶ 학습셋 스냅샷: 선정 집합을 불변 스냅샷으로 고정
+```
+
+경량 경로가 **검색 가능한 메타데이터**를 만들고, 중량 경로가 **실제 내용물**을 보관한다.
+둘을 잇는 것이 `blob_uri`다 — 이 패턴을 Claim-Check라 부른다.
+
+> 계층별 실측 수치(Hz·크기·형식·채널별 상세)는 **[데이터 설계 §1, §3](data-design.md)** 이
+> 정본이다. 위 수치는 논지에 필요한 만큼만 인용했다.
 
 ### 1.5 기술 스택
 
