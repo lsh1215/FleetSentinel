@@ -334,3 +334,33 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-
 }
 .maplibregl-ctrl-attrib { background: rgba(13,15,19,0.75) !important; font-size: 9px !important; }
 .maplibregl-ctrl-attrib a { color: var(--text-3) !important; }
+
+/* ── 인지 객체 범례·팝업 ─────────────────────── */
+.legend {
+  position: absolute; right: 10px; bottom: 10px;
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 3px;
+  background: rgba(13, 15, 19, 0.86); backdrop-filter: blur(6px);
+}
+.lg-t {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-3); margin-bottom: 2px;
+}
+.lg { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-2); }
+.lg i { width: 9px; height: 9px; border-radius: 1px; display: inline-block; }
+.lg i.dash {
+  background: transparent; border: 1px dashed var(--text-3);
+}
+.maplibregl-popup.obj-popup .maplibregl-popup-content {
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: 3px; padding: 8px 10px; color: var(--text);
+  font-size: 11px; box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.maplibregl-popup.obj-popup .maplibregl-popup-tip { border-top-color: var(--line-strong) !important; }
+.op-cat {
+  font-weight: 600; margin-bottom: 5px; padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.op-row { display: flex; justify-content: space-between; gap: 12px; color: var(--text-3); }
+.op-row b { color: var(--text); font-family: var(--mono); font-weight: 500; }
+.op-warn { margin-top: 5px; color: var(--warn); font-size: 10px; }

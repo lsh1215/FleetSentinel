@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import maplibregl, { type Map as MlMap, type GeoJSONSource } from "maplibre-gl";
 import { telemetryStore } from "../lib/telemetryStore";
+import { boxFootprint } from "../lib/geo";
 
 /**
  * fleet 지도.
@@ -24,19 +25,45 @@ interface Props {
   onSelect: (id: string) => void;
   /** 선택 차량을 화면 중앙에 유지한다. 끄면 자유 탐색. */
   follow: boolean;
+  /** 인지 객체 발자국을 지도에 투영한다. */
+  showObjects: boolean;
+}
+
+/**
+ * 클래스별 색.
+ *
+ * 색 수를 최소로 묶는다 — nuScenes 카테고리는 23종이지만 관제에서 필요한 구분은
+ * **취약 도로 사용자 / 차량 / 정적 장애물** 셋이다. 23색을 쓰면 아무것도 안 보인다.
+ */
+const CLASS_COLOR: Record<string, string> = {
+  adult: "#e0b341",
+  child: "#e0b341",
+  police_officer: "#e0b341",
+  construction_worker: "#e0b341",
+  bicycle: "#e0b341",
+  motorcycle: "#e0b341",
+};
+const VEHICLE_CLASSES = new Set(["car", "truck", "bus", "trailer", "construction", "emergency"]);
+
+function classColor(cat: string): string {
+  if (CLASS_COLOR[cat]) return CLASS_COLOR[cat]; // 취약 도로 사용자 — 노랑
+  if (VEHICLE_CLASSES.has(cat)) return "#6f9fd8"; // 차량 — 청
+  return "#6b7480"; // 그 외 정적 장애물 — 회색
 }
 
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
-export function FleetMap({ selectedId, onSelect, follow }: Props) {
+export function FleetMap({ selectedId, onSelect, follow, showObjects }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const rafRef = useRef<number>(0);
   const selectedRef = useRef(selectedId);
   const followRef = useRef(follow);
+  const showObjectsRef = useRef(showObjects);
   const didFitRef = useRef(false);
   selectedRef.current = selectedId;
   followRef.current = follow;
+  showObjectsRef.current = showObjects;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -83,6 +110,37 @@ export function FleetMap({ selectedId, onSelect, follow }: Props) {
             ["get", "recent"], 0.5,
             0.15,
           ],
+        },
+      });
+
+      // ── 인지 객체 발자국 ────────────────────────────────────────────
+      // 자율주행 관제를 일반 fleet 관제와 구별하는 지점이다 — 차량이 **어디 있는지**가
+      // 아니라 **무엇을 보고 있는지**를 보여준다. 3D 박스를 위에서 본 사각형으로 투영한다.
+      map.addSource("objects", { type: "geojson", data: EMPTY });
+      map.addLayer({
+        id: "object-fill",
+        type: "fill",
+        source: "objects",
+        // 줌 14 미만에서는 객체가 픽셀 몇 개라 의미가 없고 화면만 지저분해진다.
+        minzoom: 14,
+        paint: {
+          "fill-color": ["get", "color"],
+          // 저신뢰(LiDAR 미관측) 객체는 거의 투명하게 — 지우지는 않는다.
+          // 23%가 그런 라벨이므로 숨기면 데이터를 오해하게 된다(§7.1).
+          "fill-opacity": ["case", ["get", "lowConf"], 0.06, 0.2],
+        },
+      });
+      map.addLayer({
+        id: "object-outline",
+        type: "line",
+        source: "objects",
+        minzoom: 14,
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": ["case", ["get", "lowConf"], 0.6, 1.2],
+          // 저신뢰는 점선으로 — 색만으로 구분하면 색약에서 안 보인다.
+          "line-dasharray": ["case", ["get", "lowConf"], ["literal", [2, 2]], ["literal", [1, 0]]],
+          "line-opacity": ["case", ["get", "lowConf"], 0.45, 0.9],
         },
       });
 
@@ -206,6 +264,28 @@ export function FleetMap({ selectedId, onSelect, follow }: Props) {
         },
       });
 
+      // 인지 객체 클릭 — 무엇을 근거로 그렇게 인지했는지 보여준다.
+      // 관제에서 "저 박스가 왜 저기 있나"를 물을 수 있어야 한다.
+      map.on("click", "object-fill", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const p = f.properties ?? {};
+        const lowConf = p["lowConf"] === true || p["lowConf"] === "true";
+        new maplibregl.Popup({ closeButton: false, className: "obj-popup", maxWidth: "220px" })
+          .setLngLat(e.lngLat)
+          .setHTML(
+            `<div class="op-cat">${p["category"] ?? "?"}</div>` +
+              `<div class="op-row"><span>LiDAR 포인트</span><b>${p["lidarPts"] ?? "?"}</b></div>` +
+              `<div class="op-row"><span>가시성</span><b>${p["visibility"] ?? "?"}</b></div>` +
+              (lowConf
+                ? `<div class="op-warn">LiDAR 미관측 — 저신뢰 라벨</div>`
+                : ""),
+          )
+          .addTo(map);
+      });
+      map.on("mouseenter", "object-fill", () => (map.getCanvas().style.cursor = "help"));
+      map.on("mouseleave", "object-fill", () => (map.getCanvas().style.cursor = ""));
+
       map.on("click", "vehicles", (e) => {
         const id = e.features?.[0]?.properties?.["vehicleId"];
         if (typeof id === "string") onSelect(id);
@@ -225,6 +305,7 @@ export function FleetMap({ selectedId, onSelect, follow }: Props) {
 
       const points: GeoJSON.Feature[] = [];
       const lines: GeoJSON.Feature[] = [];
+      const boxes: GeoJSON.Feature[] = [];
       for (const v of vehicles) {
         if (!v.pos) continue;
         const selected = v.vehicleId === sel;
@@ -256,8 +337,34 @@ export function FleetMap({ selectedId, onSelect, follow }: Props) {
             properties: { selected, recent: true },
           });
         }
+
+        // 인지 객체는 **선택 차량만** 그린다. 전 차량을 동시에 그리면 겹쳐서
+        // 어느 차가 무엇을 보는지 알 수 없고, 그게 이 뷰의 존재 이유다.
+        if (showObjectsRef.current && selected && v.location) {
+          for (const o of v.objects) {
+            const ring = boxFootprint(o.cx, o.cy, o.width, o.length, o.yaw, v.location);
+            if (!ring) continue;
+            boxes.push({
+              type: "Feature",
+              // LonLat은 readonly 튜플이라 GeoJSON의 가변 배열 타입과 겹치지 않는다.
+              // 값은 같으므로 여기서 한 번만 복사해 넘긴다.
+              geometry: { type: "Polygon", coordinates: [ring.map((p) => [p[0], p[1]])] },
+              properties: {
+                color: classColor(o.category),
+                lowConf: o.lidarPts === 0,
+                category: o.category,
+                lidarPts: o.lidarPts,
+                visibility: o.visibility,
+              },
+            });
+          }
+        }
       }
 
+      (m.getSource("objects") as GeoJSONSource | undefined)?.setData({
+        type: "FeatureCollection",
+        features: boxes,
+      });
       (m.getSource("vehicles") as GeoJSONSource | undefined)?.setData({
         type: "FeatureCollection",
         features: points,

@@ -41,6 +41,20 @@ export interface FleetEvent {
   readonly detail: string;
 }
 
+/** 인지된 객체 하나의 평면 발자국 — 지도 투영용. */
+export interface PerceivedObject {
+  readonly category: string;
+  /** ENU 글로벌 미터 */
+  readonly cx: number;
+  readonly cy: number;
+  readonly width: number;
+  readonly length: number;
+  readonly yaw: number;
+  /** 박스 내 LiDAR 포인트 수. 0이면 미관측 = 저신뢰(§7.1) */
+  readonly lidarPts: number;
+  readonly visibility: string;
+}
+
 export interface VehicleState {
   readonly vehicleId: string;
   location: string;
@@ -56,6 +70,8 @@ export interface VehicleState {
   objectCount: number;
   zeroLidarCount: number;
   classes: Record<string, number>;
+  /** 최신 키프레임의 인지 객체. 지도 투영에 쓴다. */
+  objects: PerceivedObject[];
   /** 마지막 신호의 재생 시각(ms) */
   lastT: number;
   /** 이 차량이 지금까지 받은 레코드 수 — 처리량 표시용 */
@@ -75,12 +91,26 @@ interface SignalBatch {
   records: { e: string; c: string; t: number; v: Record<string, unknown> }[];
 }
 
+/** SSE로 오는 인지 산출 이벤트(키프레임 1건). */
 interface PerceptionEvent {
   vehicle_id: string;
+  location: string;
   t: number;
   n_objects: number;
   n_zero_lidar: number;
   classes: Record<string, number>;
+  boxes?: {
+    /** 중심 (ENU 글로벌 미터) */
+    c: [number, number];
+    /** (width, length) 미터 */
+    s: [number, number];
+    /** 길이 방향 방위 (rad) */
+    yaw: number;
+    cat: string;
+    /** num_lidar_pts */
+    lp: number;
+    vis: string;
+  }[];
 }
 
 const TRAIL_MAX = 400;
@@ -119,6 +149,7 @@ class TelemetryStore {
         objectCount: 0,
         zeroLidarCount: 0,
         classes: {},
+        objects: [],
         lastT: 0,
         recordCount: 0,
         series: {
@@ -214,10 +245,22 @@ class TelemetryStore {
   }
 
   ingestPerception(p: PerceptionEvent): void {
-    const v = this.ensureVehicle(p.vehicle_id);
+    const v = this.ensureVehicle(p.vehicle_id, { location: p.location });
     v.objectCount = p.n_objects;
     v.zeroLidarCount = p.n_zero_lidar;
     v.classes = p.classes;
+    // 인지 결과는 키프레임(2Hz)마다 통째로 교체된다 — 누적하지 않는다.
+    // 객체는 사라지고 나타나므로 이전 프레임을 남기면 유령이 쌓인다.
+    v.objects = (p.boxes ?? []).map((b) => ({
+      category: b.cat,
+      cx: b.c[0],
+      cy: b.c[1],
+      width: b.s[0],
+      length: b.s[1],
+      yaw: b.yaw,
+      lidarPts: b.lp,
+      visibility: b.vis,
+    }));
     if (p.n_zero_lidar > 0) {
       this.pushEvent({
         id: `${p.vehicle_id}-${p.t}-lc`,

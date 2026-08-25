@@ -23,6 +23,7 @@ export default function App() {
   const [view, setView] = useState<"map" | "sensor">("map");
   const [reloadKey, setReloadKey] = useState(0);
   const [follow, setFollow] = useState(true);
+  const [showObjects, setShowObjects] = useState(true);
   const [meta, setMeta] = useState<VehicleMeta[]>([]);
   const clientRef = useRef<SseClient | null>(null);
 
@@ -104,10 +105,23 @@ export default function App() {
               <i>카메라 6 · LiDAR · 3D 박스</i>
             </button>
             {view === "map" && (
-              <label className="toggle vt-reload" title="선택 차량을 화면 중앙에 유지한다">
-                <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
-                따라가기
-              </label>
+              <>
+                <label
+                  className="toggle vt-reload"
+                  title="선택 차량이 인지한 객체를 지도에 투영한다 (줌 14 이상)"
+                >
+                  <input
+                    type="checkbox"
+                    checked={showObjects}
+                    onChange={(e) => setShowObjects(e.target.checked)}
+                  />
+                  인지 객체
+                </label>
+                <label className="toggle" title="선택 차량을 화면 중앙에 유지한다">
+                  <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
+                  따라가기
+                </label>
+              </>
             )}
             {view === "sensor" && rrdUrl && (
               <button className="ghost vt-reload" onClick={() => setReloadKey((k) => k + 1)}>
@@ -120,8 +134,22 @@ export default function App() {
             {/* 지도는 언마운트하지 않는다 — 다시 만들면 타일을 새로 받고 궤적이 끊긴다.
                 탭 전환은 표시 여부만 바꾼다. */}
             <div className="stage-layer" style={{ visibility: view === "map" ? "visible" : "hidden" }}>
-              <FleetMap selectedId={selected} onSelect={setSelected} follow={follow} />
+              <FleetMap
+                selectedId={selected}
+                onSelect={setSelected}
+                follow={follow}
+                showObjects={showObjects}
+              />
               {selectedMeta && <p className="map-note">{selectedMeta.description}</p>}
+              {showObjects && (
+                <div className="legend">
+                  <span className="lg-t">인지 객체</span>
+                  <span className="lg"><i style={{ background: "#e0b341" }} />보행자·이륜</span>
+                  <span className="lg"><i style={{ background: "#6f9fd8" }} />차량</span>
+                  <span className="lg"><i style={{ background: "#6b7480" }} />정적</span>
+                  <span className="lg"><i className="dash" />LiDAR 미관측</span>
+                </div>
+              )}
             </div>
 
             {/* 반대로 뷰어는 탭을 벗어나면 언마운트한다 — wasm이 GPU·메모리를 계속 쥔다. */}

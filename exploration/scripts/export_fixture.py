@@ -22,7 +22,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from nuscenes.eval.common.utils import quaternion_yaw  # noqa: E402
 from nuscenes.nuscenes import NuScenes  # noqa: E402
+from pyquaternion import Quaternion  # noqa: E402
 
 from fleetsentinel_ingest.batching import batch_by_window  # noqa: E402
 from fleetsentinel_ingest.nuscenes_source import (  # noqa: E402
@@ -131,19 +133,26 @@ def main() -> int:
             perception_events.append(
                 {
                     "vehicle_id": vid,
+                    "location": log["location"],
                     "t": ts,
                     "n_objects": len(objs),
                     "n_zero_lidar": sum(1 for o in objs if o.num_lidar_pts == 0),
                     "classes": dict(cls.most_common(6)),
+                    # 지도에 투영하려면 회전이 필요하다. 쿼터니언을 브라우저로 보내
+                    # 거기서 yaw를 뽑는 것보다, 여기서 devkit 함수로 정확히 계산해
+                    # 각도 하나만 보내는 편이 낫다(페이로드도 작다).
                     "boxes": [
                         {
-                            "c": [round(o.center_x, 2), round(o.center_y, 2), round(o.center_z, 2)],
-                            "s": [round(o.size_w, 2), round(o.size_l, 2), round(o.size_h, 2)],
+                            "c": [round(o.center_x, 2), round(o.center_y, 2)],
+                            "s": [round(o.size_w, 2), round(o.size_l, 2)],
+                            "yaw": round(
+                                quaternion_yaw(Quaternion(o.rot_w, o.rot_x, o.rot_y, o.rot_z)), 4
+                            ),
                             "cat": o.category.split(".")[-1],
                             "lp": o.num_lidar_pts,
                             "vis": o.visibility,
                         }
-                        for o in objs[:40]
+                        for o in objs[:60]
                     ],
                 }
             )
