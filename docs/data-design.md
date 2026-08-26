@@ -545,7 +545,7 @@ lat/lon 순서 규약 — GeoJSON은 `[lon, lat]`, 대부분의 지도 라이브
 | 주제 | 어디에 |
 |---|---|
 | 전송 단위·유실 방지 | **결정** — 레코드 단위 + 온보드 WAL. [`wal-design.md`](wal-design.md) · [`ingestion-design-review.md`](ingestion-design-review.md) §4.1 |
-| ack·중복 제거 | **결정** — 누적 ack + `seq` 슬라이딩 윈도우. [`ack-dedup-design.md`](ack-dedup-design.md) |
+| ack·중복 제거 | **결정** — Cumulative Acknowledgement(CACK) + `seq` 슬라이딩 윈도우. [`ack-dedup-design.md`](ack-dedup-design.md) |
 | 프로토콜 (gRPC / MQTT / HTTPS) | **결정** — 고주파 gRPC 스트림, 저주파 MQTT, 중량 HTTPS resumable. [`ingestion-design-review.md`](ingestion-design-review.md) §4.6·§4.8 |
 | 관제 화면·시각화 도구 | **구현** — React + MapLibre + uPlot + Rerun. [`frontend-tech-notes.md`](frontend-tech-notes.md) |
 | 학습셋 버저닝 | **결정** — 불변 매니페스트(클립 id + 체크섬). Iceberg 스냅샷은 보류. [`sdd.md`](sdd.md) S-8 |

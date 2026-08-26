@@ -32,7 +32,7 @@
 | 파일 | 역할 | 검증한 것 |
 |---|---|---|
 | `fleetsentinel_ingest/wal.py` | 온보드 WAL — 레코드 포맷·세그먼트·그룹 커밋·복구·커서 | **SIGKILL 후 `seq` 결번 0** |
-| `fleetsentinel_ingest/shipping.py` | 누적 ack 프로토콜 + 배송기 | ack이 **Kafka 쓰기 성공을 앞지르지 않음**, 역압 |
+| `fleetsentinel_ingest/shipping.py` | Cumulative Acknowledgement(CACK) 프로토콜 + 배송기 | ack이 **Kafka 쓰기 성공을 앞지르지 않음**, 역압 |
 | `fleetsentinel_ingest/dedup.py` | `(vehicle_id, boot_id, seq)` 슬라이딩 윈도우 dedup | 상태가 **데이터 양에 비례하지 않음**, 순서 역전에서 유실 0 |
 
 세 개를 이으면 **at-least-once 전송 + 멱등 dedup = 결과적 exactly-once** 다.
@@ -59,7 +59,7 @@ SIGKILL 후 재개해서 하류가 보는 것이 정확히 한 번인지 재전�
 | `tests/test_geo.py` | 30 | 좌표 변환 계약 (왕복·축방향·거리보존·원점) |
 | `tests/test_wal.py` | 13 | WAL 내구성 — 잘린 꼬리·세그먼트 회수·SIGKILL·`seq` 재사용 방지 |
 | `tests/test_dedup.py` | 14 | 멱등·순서 역전·`boot_id` 리셋·유실 확정·상태 크기 |
-| `tests/test_shipping.py` | 13 | 누적 ack·역압·SIGKILL 후 결과적 exactly-once |
+| `tests/test_shipping.py` | 13 | CACK·역압·SIGKILL 후 결과적 exactly-once |
 | `tests/test_batching.py` | 12 | 뒤집힌 배치 정책의 계약 (측정 하네스) |
 
 ## 준비

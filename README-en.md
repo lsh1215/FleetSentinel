@@ -52,7 +52,7 @@ nuScenes real-world (1000 scenes × 20s)      [CARLA/OpenSCENARIO — augmentati
    │                              │
 ① ② light                    ③ heavy (27 MB/s)
  per-record + WAL             triggered clip upload
-   │ gRPC stream (cumulative ack)│ HTTPS resumable
+   │ gRPC stream (CACK)          │ HTTPS resumable
    ▼                              ▼
 Kafka 3-broker (RF=3/ISR=2)   Object storage (MCAP originals)
    │                              │
@@ -90,7 +90,7 @@ The two rejoin in the clip catalog.
 | Sensor rates span hundreds-fold | **Three timestamps** + keyframe synchronization anchor |
 | Coordinates are not lat/lon | **Official-origin ENU→WGS84 conversion** |
 | Raw logs must replay standalone | **MCAP with embedded calibration** |
-| At-least-once ingest, zero-loss proof | **Cumulative ack + `seq` sliding-window dedup** — a gap in `seq` *is* the loss ([design](docs/ack-dedup-design.md)) |
+| At-least-once ingest, zero-loss proof | **Cumulative Acknowledgement (CACK) + `seq` sliding-window dedup** — a gap in `seq` *is* the loss ([design](docs/ack-dedup-design.md)) |
 | 23% of labels unobserved | **Quality flags as a first-class curation axis** |
 
 Full problem-to-solution mapping is in [SDD §2–§3](docs/sdd.md) (Korean).
@@ -138,7 +138,7 @@ decisive one: matching nuScenes' own labels exactly requires all five transform 
 |---|---|---|
 | P0 | Local infrastructure (Kafka HA, Flink, ClickHouse, object storage) | ✅ |
 | **P1** | **Data characterization** — scale/format measurement, coordinate system, losslessness | ✅ |
-| **P1.5** | **Ingest design + vehicle-side loss prevention** — WAL, cumulative ack, `seq` dedup | ✅ verified in the replayer |
+| **P1.5** | **Ingest design + vehicle-side loss prevention** — WAL, CACK, `seq` dedup | ✅ verified in the replayer |
 | **P1.6** | **Ops console** — map, time series, clip search, sensor replay | ✅ mock stream |
 | P2 | Schema finalization · **per-record** replayer → Kafka | next |
 | P3 | Flink pipeline · ClickHouse ingestion | |

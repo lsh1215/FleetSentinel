@@ -49,7 +49,7 @@ nuScenes 실측 (1000 scene × 20초)      [CARLA/OpenSCENARIO — 보강, 스�
    │                              │
 ① ② 경량                      ③ 중량 (27 MB/s)
  레코드 단위 + WAL            트리거 클립 업로드
-   │ gRPC 스트림 (누적 ack)      │ HTTPS resumable
+   │ gRPC 스트림 (CACK)          │ HTTPS resumable
    ▼                              ▼
 Kafka 3-broker (RF=3/ISR=2)   오브젝트 스토리지 (MCAP 원본)
    │                              │
@@ -86,7 +86,7 @@ React 대시보드
 | 센서 주기가 채널마다 수백 배 다름 | **타임스탬프 3종** + 키프레임 동기화 앵커 |
 | 좌표가 위경도가 아님 | **공식 원점 기반 ENU→WGS84** (§S-5) |
 | 원본이 그 자체로 재생돼야 함 | **MCAP + 캘리브레이션 내장** |
-| at-least-once인데 유실 0 증명 | **누적 ack + `seq` 슬라이딩 윈도우 dedup** — 결번이 곧 유실 ([ack·dedup](docs/ack-dedup-design.md)) |
+| at-least-once인데 유실 0 증명 | **Cumulative Acknowledgement(CACK) + `seq` 슬라이딩 윈도우 dedup** — 결번이 곧 유실 ([ack·dedup](docs/ack-dedup-design.md)) |
 | 라벨 23%가 미관측 | **품질 플래그를 큐레이션 1급 축으로** |
 
 전체 문제-해결 대응은 [SDD §2–§3](docs/sdd.md)에 1:1로 정리돼 있습니다.
@@ -139,7 +139,7 @@ Java 버전이 모듈마다 다르다 — Spring Boot 4는 Java 17~25를 지원�
 |---|---|---|
 | P0 | 로컬 인프라 (Kafka HA · Flink · ClickHouse · 오브젝트 스토리지) | ✅ |
 | **P1** | **데이터 정의** — 규모·형식 실측, 좌표계 규명, 무손실 검증 | ✅ |
-| **P1.5** | **수집 계층 설계 + 온보드 유실 방지** — WAL · 누적 ack · `seq` dedup | ✅ 재생기에서 검증 |
+| **P1.5** | **수집 계층 설계 + 온보드 유실 방지** — WAL · CACK · `seq` dedup | ✅ 재생기에서 검증 |
 | **P1.6** | **관제 대시보드** — 지도 · 시계열 · 클립 검색 · 센서 재생 | ✅ 목업 스트림 |
 | P2 | 스키마 3종 확정 · **레코드 단위** 재생기 → Kafka | 다음 |
 | P3 | Flink 파이프라인 · ClickHouse 적재 | |
@@ -203,7 +203,7 @@ cd frontend && npm install && npm run dev      # 대시보드 (목업 SSE 스트
 | [`docs/data-design.md`](docs/data-design.md) | **데이터 사실의 정본** — 실측 수치·필드 계약·시간/좌표 계약. 다른 문서는 여기를 링크만 합니다 |
 | [`docs/ingestion-design-review.md`](docs/ingestion-design-review.md) | 수집 계층 재검토 — 배치를 뒤집은 과정, Kafka/Pub/Sub·gRPC/MQTT 선택 근거 |
 | [`docs/wal-design.md`](docs/wal-design.md) | 온보드 WAL — 요구사항·문제·구현·실측 |
-| [`docs/ack-dedup-design.md`](docs/ack-dedup-design.md) | 누적 ack 프로토콜 + `seq` dedup — 상태를 124.8GB에서 350KB로 |
+| [`docs/ack-dedup-design.md`](docs/ack-dedup-design.md) | Cumulative Acknowledgement(CACK) 프로토콜 + `seq` dedup — 상태를 124.8GB에서 350KB로 |
 | [`docs/frontend-tech-notes.md`](docs/frontend-tech-notes.md) | 프론트엔드 기술 포인트 24개 (면접 예상 질문 형식) |
 | [`docs/pipeline-notes-provisional.md`](docs/pipeline-notes-provisional.md) | 잠정 노트 — §4·§6은 재검토에서 무효가 됐습니다 |
 

@@ -26,7 +26,7 @@ CHILD = Path(__file__).parent / "_ship_child.py"
 V = "n015-2018-07-24-11-22-45+0800"
 
 
-# ── 누적 ack 계산 ───────────────────────────────────────────────────────
+# ── CACK 계산 ───────────────────────────────────────────────────────
 
 
 def test_cumulative_ack_advances_in_order():
@@ -37,7 +37,7 @@ def test_cumulative_ack_advances_in_order():
 
 
 def test_ack_does_not_advance_past_a_hole():
-    """구멍 위의 완료는 ack할 수 없다 — 그게 누적 ack의 의미다."""
+    """구멍 위의 완료는 ack할 수 없다 — 그게 CACK의 의미다."""
     t = AckTracker(0)
     for s in [0, 1, 3, 4, 5]:
         t.complete(s)

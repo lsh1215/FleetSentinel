@@ -408,7 +408,7 @@ WAL은 검증됐으나 **전송 측이 없다.** 남은 것은 둘이다.
 
 | # | 항목 |
 |---|---|
-| 1 | ~~ack 프로토콜~~ → **[설계·구현 완료](ack-dedup-design.md)**. 누적 ack, Kafka 쓰기 성공 후 방출, 재개 지점은 클라이언트가 결정 |
+| 1 | ~~ack 프로토콜~~ → **[설계·구현 완료](ack-dedup-design.md)**. Cumulative Acknowledgement(CACK), Kafka 쓰기 성공 후 방출, 재개 지점은 클라이언트가 결정 |
 | 2 | ~~레코드 단위 dedup 상태 전략~~ → **[설계·구현 완료](ack-dedup-design.md)**. `(vehicle_id, boot_id, seq)` 슬라이딩 윈도우로 500대 상태 **350 KB** |
 | 3 | **스트림 fencing** — 같은 차량이 두 스트림을 동시에 열 때. [ack·dedup 설계](ack-dedup-design.md) A-L1 |
 | 4 | **채널별 내구성 차등** — `zoesensors`가 WAL 쓰기의 72%다(§4) |

@@ -8,11 +8,11 @@ gRPC 양방향 스트림에는 애플리케이션 수준 ack이 없다. HTTP/2 �
 | 결정 | 선택 | 근거 |
 |---|---|---|
 | ack 시점 | **Kafka 쓰기 성공(`acks=all`) 후** | 수신 직후 ack하면 게이트웨이 크래시에서 유실 |
-| ack 내용 | **누적(cumulative) 최고 연속 `seq`** | 구간 목록보다 단순하고, 아래 이유로 정확히 성립 |
-| ack 주기 | `every_n` 개 **또는** `every_s` 초 중 먼저 | 개수만 두면 저부하에서 커밋이 멈춘다 |
+| ack 내용 | **Cumulative Acknowledgement(CACK)** — 최고 연속 `seq` | 구간 목록보다 단순하고, 아래 이유로 정확히 성립 |
+| CACK 주기 | `every_n` 개 **또는** `every_s` 초 중 먼저 | 개수만 두면 저부하에서 커밋이 멈춘다 |
 | 재개 지점 | **클라이언트가 정한다** (`committed + 1`) | 게이트웨이 stateless 유지 — 아래 참조 |
 
-## 누적 ack이 정확히 성립하는 이유
+## CACK이 정확히 성립하는 이유
 
 Kafka producer 콜백은 **파티션별로 순서대로** 호출된다. 파티션 키가 `vehicle_id`이므로
 한 차량의 레코드는 한 파티션에 가고, 따라서 완료 콜백도 보낸 순서대로 온다. 그래서
@@ -20,7 +20,7 @@ Kafka producer 콜백은 **파티션별로 순서대로** 호출된다. 파티�
 
 `enable.idempotence=true` 이면 `max.in.flight.requests.per.connection <= 5` 에서도
 Kafka가 시퀀스 번호로 재정렬하므로 순서 보장이 유지된다. 즉 **처리량을 포기하지 않고**
-누적 ack을 쓸 수 있다. 그래도 :class:`AckTracker` 는 순서 없는 완료를 받아낸다 —
+CACK을 쓸 수 있다. 그래도 :class:`AckTracker` 는 순서 없는 완료를 받아낸다 —
 이 보장에 의존하지 않는 편이 안전하고, 비용도 없다.
 
 ## 재개 지점을 클라이언트가 정하는 이유
@@ -61,7 +61,7 @@ DEFAULT_ACK_EVERY_S = 0.2
 
 
 class AckTracker:
-    """게이트웨이 측. 순서 없이 완료되는 쓰기에서 누적 ack을 계산한다.
+    """게이트웨이 측. 순서 없이 완료되는 쓰기에서 CACK을 계산한다.
 
     :param start_seq: 이 스트림의 첫 `seq`. `ack_seq`는 `start_seq - 1`에서 시작한다
     :param every_n: 이만큼 전진하면 ack을 방출한다
@@ -188,7 +188,7 @@ class WalShipper:
         return len(records)
 
     def on_ack(self, ack_seq: int) -> None:
-        """게이트웨이의 누적 ack. **이 지점까지 WAL을 커밋해도 안전하다.**"""
+        """게이트웨이의 CACK. **이 지점까지 WAL을 커밋해도 안전하다.**"""
         if ack_seq < self.wal.committed_seq:
             return  # 순서 뒤바뀐 ack — 커밋을 되돌리면 안 된다
         self.wal.commit(ack_seq)
