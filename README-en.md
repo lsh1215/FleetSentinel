@@ -115,6 +115,11 @@ needed). Rationale in [SDD §4.1](docs/sdd.md).
 Java versions differ per module: Spring Boot 4 supports Java 17–25, but Flink 2.3 defaults to
 Java 17 with 21 still experimental. So the API runs on Java 21 and the Flink job on Java 17.
 
+Writing the Flink job in **PyFlink was rejected** — not on performance, but on the connector/API
+combination: dedup (a per-vehicle bitmap in keyed state) and the official ClickHouse sink both
+require the DataStream API, which is where PyFlink is least comfortable. Rationale and the
+conditions that would reverse this are in [SDD §4.1 A-13](docs/sdd.md).
+
 ## Verification
 
 | Gate | Result |

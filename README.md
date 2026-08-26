@@ -116,6 +116,10 @@ Iceberg 보류에는 **값이 있습니다.** Flink의 Iceberg 싱크가 주는 
 Java 버전이 모듈마다 다르다 — Spring Boot 4는 Java 17~25를 지원하지만 Flink 2.3은 Java 17이
 기본이고 21은 실험적입니다. 그래서 API는 Java 21, Flink 잡은 Java 17로 나눕니다.
 
+Flink 잡을 **PyFlink로 쓰는 안은 기각**했습니다. 성능이 아니라 커넥터·API 조합 때문입니다 —
+dedup(차량별 비트맵 keyed state)과 ClickHouse 공식 싱크가 둘 다 DataStream API를 요구하는데,
+PyFlink에서 그 조합이 가장 불편합니다. 근거와 이 결정이 바뀌는 조건은 [SDD §4.1 A-13](docs/sdd.md).
+
 ## 검증
 
 | 게이트 | 결과 |

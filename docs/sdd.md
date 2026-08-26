@@ -182,7 +182,7 @@ ClickHouse 클립 카탈로그 (1행 = 클립 1개)
 | 계층 | 채택 | 버전 | 근거 |
 |---|---|---|---|
 | 스트림 버스 | **Apache Kafka** (KRaft) | 4.x | 3-broker RF=3 / ISR=2로 broker-level HA 실증 |
-| 스트림 처리 | **Apache Flink** | **2.3.0** (2026-06) | Java 17이 기본·권장. Java 21은 **실험적**이라 채택 안 함 |
+| 스트림 처리 | **Apache Flink** | **2.3.0** (2026-06) | Java 17이 기본·권장. Java 21은 **실험적**이라 채택 안 함. **PyFlink는 기각**(§4.1 A-13) — 커넥터·API 조합 때문이며 성능 문제는 아니다 |
 | 원시 로그 저장 | 오브젝트 스토리지 + **MCAP** | — | 로컬 MinIO. MCAP은 ROS 2 기본 bag 포맷 |
 | 구조화 저장·질의 | **ClickHouse** | **26.3 LTS** (`:lts` 태그) | §4.1 A-8 |
 | API | **Spring Boot** | **4.0.x** (2025-11 릴리스) | Spring Framework 7.x · Jakarta EE 11 · Servlet 6.1 |
@@ -752,6 +752,37 @@ MQTT를 택할 근거가 되지 못한다.** 결정적 차이는 둘이다 — �
 
 상세는 [수집 계층 검토](ingestion-design-review.md) §4.1·§4.8. MQTT는 저주파 채널에 남기며
 LWT 오프라인 검출은 그대로 유지된다.
+
+#### A-13. Flink 잡을 PyFlink로 작성
+
+재생기가 Python이므로 Flink 잡도 Python으로 쓰면 언어가 하나로 줄어든다. PyFlink는 공식
+API이고, Table API/SQL로 표현한 로직은 **JVM에서 실행되므로 직렬화 오버헤드가 없다**.
+검증(범위·쿼터니언 정규화)과 파생(ENU→WGS84)은 여기에 해당한다.
+
+**기각 이유**: 성능이 아니라 **커넥터·API 조합**이다. 우리 잡의 두 부분이 둘 다
+DataStream API를 요구한다.
+
+| 부분 | 요구 | PyFlink에서의 상태 |
+|---|---|---|
+| dedup | 차량별 비트맵을 `ValueState`에 두고 레코드마다 비트 연산 → **SQL로 표현 불가**, 사용자 함수여야 한다 | Python UDF는 기본적으로 별도 프로세스에서 실행되고 레코드마다 직렬화한다. Flink 1.15+ **thread mode**로 JVM 스레드 실행이 가능하나 CPython 한정이고 격리 수준이 낮아진다 |
+| ClickHouse 싱크 | 공식 ClickHouse Flink 커넥터가 Java 클라이언트 기반 **DataStream API 전용**이다(Table API/SQL 미지원, 예정) | Java 커넥터를 PyFlink에서 쓰려면 Python 래퍼가 필요한데 없는 것으로 보인다(직접 확인하지 않음). Flink 기본 JDBC 커넥터에는 ClickHouse dialect가 없고, 커뮤니티 SQL 커넥터는 Table API 전용이다 |
+
+즉 PyFlink로 가면 **Table API + 커뮤니티 커넥터 + Python UDF** 혼합이 되고, 그게 세 경로 중
+가장 손이 많이 가는 구성이다. Flink 공식 문서도 Python 없이 표현 가능한 로직은 SQL이나
+Java로 옮기라고 권고한다.
+
+**규모는 제약이 아니다.** 실제 데모 규모(동시 스트림 4~20개 = 5,180~25,900 rec/s)에서
+thread mode를 쓰면 여유가 있다. Python 단독 dedup 실측이 1,136,258 accept/s다
+([ack·dedup 설계](ack-dedup-design.md) §4.1). 성능으로 기각한 것이 아니다.
+
+**대가**: 언어가 둘로 남는다(Python 재생기 + Java 잡). 다만 `dedup.py`가 테스트 14건으로
+계약이 고정돼 있어 Java 포팅은 같은 테스트 케이스를 옮기는 작업이 된다.
+
+**이 결정이 바뀌는 조건**: ① ClickHouse 공식 커넥터가 Table API를 지원하면, 또는
+② dedup을 저장 계층으로 내려 Flink 잡을 stateless로 만들면 PyFlink가 성립한다. ②는
+`ReplacingMergeTree`가 이미 읽기 시점 멱등을 하고 있고(L-14) 결번 탐지도 `seq`에 window
+함수를 걸면 SQL로 되므로 실현 가능하다. 대가는 중복이 저장 계층까지 유입되고 유실 탐지가
+스트리밍 지표에서 배치 질의로 내려가는 것이다.
 
 ### 4.2 한계 (Not Covered)
 
