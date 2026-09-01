@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: fleetsentinel
+spec:
+  selector:
+    app: clickhouse
+  ports:
+    - name: http
+      port: 8123
+    - name: native
+      port: 9000
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  namespace: fleetsentinel
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse
+  template:
+    metadata:
+      labels:
+        app: clickhouse
+    spec:
+      containers:
+        - name: clickhouse
+          image: clickhouse:26.3
+          env:
+            - name: CLICKHOUSE_DB
+              value: fleet
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: CLICKHOUSE_USER}
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: CLICKHOUSE_PASSWORD}
+          ports:
+            - containerPort: 8123
+            - containerPort: 9000
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 8123
+            initialDelaySeconds: 15
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 20Gi
+---
+# 스키마 적용. infra/clickhouse/001-schema.sql 을 ConfigMap 으로 넣는다.
+#
+# ⚠️ 이 매니페스트는 스키마 본문을 갖지 않는다 — 정본은 infra/clickhouse/ 다.
+#    적용 전에 ConfigMap 을 만들어야 한다:
+#      kubectl -n fleetsentinel create configmap clickhouse-schema \
+#        --from-file=infra/clickhouse/001-schema.sql
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: clickhouse-schema
+  namespace: fleetsentinel
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: apply
+          image: clickhouse:26.3
+          env:
+            - name: CH_USER
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: CLICKHOUSE_USER}
+            - name: CH_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: CLICKHOUSE_PASSWORD}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              until clickhouse-client --host clickhouse --user "$CH_USER" \
+                    --password "$CH_PASSWORD" -q "SELECT 1" >/dev/null 2>&1; do
+                echo "clickhouse 대기..."; sleep 5
+              done
+              clickhouse-client --host clickhouse --user "$CH_USER" \
+                --password "$CH_PASSWORD" --multiquery < /schema/001-schema.sql
+              echo "스키마 적용 완료"
+          volumeMounts:
+            - name: schema
+              mountPath: /schema
+      volumes:
+        - name: schema
+          configMap:
+            name: clickhouse-schema

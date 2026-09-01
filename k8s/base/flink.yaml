@@ -1,0 +1,170 @@
+# Flink 세션 클러스터 + 잡 제출.
+#
+# ⚠️ **Application 모드가 아니라 세션 모드**다. compose 와 같은 구성을 옮긴 것이고,
+#    운영에서는 잡별 격리가 되는 Application 모드나 Flink Kubernetes Operator 가 낫다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flink-config
+  namespace: fleetsentinel
+data:
+  FLINK_PROPERTIES: |
+    jobmanager.rpc.address: flink-jobmanager
+    state.backend.type: rocksdb
+    # 버킷 루트를 쓰면 Flink 가 거절한다 — 하위 경로여야 한다.
+    state.checkpoints.dir: s3://checkpoints/flink
+    state.savepoints.dir: s3://checkpoints/savepoints
+    state.backend.incremental: true
+    s3.endpoint: http://minio:9000
+    s3.path.style.access: true
+    execution.checkpointing.interval: 10s
+    execution.checkpointing.mode: EXACTLY_ONCE
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-jobmanager
+  namespace: fleetsentinel
+spec:
+  selector:
+    app: flink
+    component: jobmanager
+  ports:
+    - name: rpc
+      port: 6123
+    - name: ui
+      port: 8081
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-jobmanager
+  namespace: fleetsentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flink
+      component: jobmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: jobmanager
+    spec:
+      containers:
+        - name: jobmanager
+          image: flink:2.0.0-java17
+          args: ["jobmanager"]
+          ports:
+            - containerPort: 6123
+            - containerPort: 8081
+          env:
+            - name: ENABLE_BUILT_IN_PLUGINS
+              value: flink-s3-fs-hadoop-2.0.0.jar
+            - name: FLINK_PROPERTIES
+              valueFrom:
+                configMapKeyRef: {name: flink-config, key: FLINK_PROPERTIES}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: MINIO_ACCESS_KEY}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: MINIO_SECRET_KEY}
+          readinessProbe:
+            httpGet:
+              path: /overview
+              port: 8081
+            initialDelaySeconds: 20
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-taskmanager
+  namespace: fleetsentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flink
+      component: taskmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: taskmanager
+    spec:
+      containers:
+        - name: taskmanager
+          image: flink:2.0.0-java17
+          args: ["taskmanager"]
+          env:
+            - name: ENABLE_BUILT_IN_PLUGINS
+              value: flink-s3-fs-hadoop-2.0.0.jar
+            - name: FLINK_PROPERTIES
+              valueFrom:
+                configMapKeyRef: {name: flink-config, key: FLINK_PROPERTIES}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: MINIO_ACCESS_KEY}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: MINIO_SECRET_KEY}
+---
+# 잡 제출. restartPolicy: Never 인 이유는 재시도가 **중복 제출**을 만들기 때문이다.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flink-submit-telemetry
+  namespace: fleetsentinel
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        # JobManager 가 뜨기 전에 제출하면 실패한다.
+        - name: wait-jobmanager
+          image: curlimages/curl:8.11.1
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf http://flink-jobmanager:8081/overview >/dev/null; do
+                echo "jobmanager 대기..."; sleep 5
+              done
+      containers:
+        - name: submit
+          image: flink:2.0.0-java17
+          env:
+            - name: KAFKA_BOOTSTRAP
+              valueFrom:
+                configMapKeyRef: {name: fleet-config, key: KAFKA_BOOTSTRAP}
+            - name: CLICKHOUSE_URL
+              valueFrom:
+                configMapKeyRef: {name: fleet-config, key: CLICKHOUSE_URL}
+            - name: CH_USER
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: CLICKHOUSE_USER}
+            - name: CH_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: CLICKHOUSE_PASSWORD}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              flink run -d -m flink-jobmanager:8081 /jobs/flink-pipeline.jar \
+                --bootstrap "$KAFKA_BOOTSTRAP" \
+                --topic telemetry.records \
+                --clickhouse "$CLICKHOUSE_URL" \
+                --clickhouse-user "$CH_USER" \
+                --clickhouse-password "$CH_PASSWORD"
+          volumeMounts:
+            - name: jobs
+              mountPath: /jobs
+      volumes:
+        # 잡 JAR 을 ConfigMap 으로 넣기엔 42 MB 라 너무 크다.
+        # 실제로는 이미지에 굽거나 오브젝트 스토리지에서 받아야 한다 — k8s/README 참조.
+        - name: jobs
+          emptyDir: {}

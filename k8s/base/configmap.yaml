@@ -1,0 +1,18 @@
+# compose 와 **같은 값**을 쓴다. 두 곳에 흩어지면 반드시 어긋난다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fleet-config
+  namespace: fleetsentinel
+data:
+  # 토픽은 하나다 — 계층별로 나누면 seq 단일 수열이 조각나 dedup 이 깨진다
+  # (scripts/create-topics.sh 주석 · data-design.md §5.0).
+  KAFKA_TOPIC_RECORDS: telemetry.records
+  KAFKA_TOPIC_DLQ: telemetry.dlq
+  KAFKA_BOOTSTRAP: kafka-0.kafka:9092,kafka-1.kafka:9092,kafka-2.kafka:9092
+  MINIO_ENDPOINT: http://minio:9000
+  MINIO_BUCKET_RAW: fleet-raw
+  CLICKHOUSE_URL: jdbc:ch://clickhouse:8123/fleet
+  # Flink 체크포인트. **버킷 루트를 쓰면 안 된다** — Flink 가
+  # "Cannot use the root directory for checkpoints" 로 거절한다.
+  FLINK_CHECKPOINT_DIR: s3://checkpoints/flink

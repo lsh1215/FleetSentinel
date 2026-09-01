@@ -1,0 +1,83 @@
+# 수집 게이트웨이. **stateless 라 Deployment 다** — 차량별 진행 커서를 갖지 않으므로
+# 어느 인스턴스에 붙어도 동작이 같고 확장이 레플리카 추가로 끝난다(SDD S-11).
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: fleetsentinel
+spec:
+  selector:
+    app: gateway
+  ports:
+    - name: grpc
+      port: 9090
+    - name: mgmt
+      port: 8082
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: fleetsentinel
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+        - name: gateway
+          # 이미지는 별도 빌드가 필요하다 — 이 저장소에 Dockerfile 이 아직 없다(k8s/README 참조).
+          image: fleetsentinel/gateway:0.1.0
+          ports:
+            - name: grpc
+              containerPort: 9090
+            - name: mgmt
+              containerPort: 8082
+          env:
+            - name: KAFKA_BOOTSTRAP
+              valueFrom:
+                configMapKeyRef: {name: fleet-config, key: KAFKA_BOOTSTRAP}
+            - name: MINIO_ENDPOINT
+              valueFrom:
+                configMapKeyRef: {name: fleet-config, key: MINIO_ENDPOINT}
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: MINIO_ACCESS_KEY}
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: MINIO_SECRET_KEY}
+            # mTLS 인증서 경로. Secret 을 여기에 마운트한다.
+            - name: FLEETSENTINEL_PKI
+              value: /pki
+          volumeMounts:
+            - name: pki
+              mountPath: /pki
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: mgmt
+            initialDelaySeconds: 20
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: mgmt
+            initialDelaySeconds: 60
+            periodSeconds: 30
+      volumes:
+        - name: pki
+          secret:
+            secretName: gateway-pki
+            # Secret 키 이름을 게이트웨이가 기대하는 경로 구조로 편다.
+            items:
+              - key: ca.crt
+                path: ca/ca.crt
+              - key: server.crt
+                path: server/server.crt
+              - key: server.key
+                path: server/server.key

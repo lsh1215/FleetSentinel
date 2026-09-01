@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: fleetsentinel
+spec:
+  selector:
+    app: minio
+  ports:
+    - name: api
+      port: 9000
+    - name: console
+      port: 9001
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minio
+  namespace: fleetsentinel
+spec:
+  serviceName: minio
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: MINIO_ACCESS_KEY}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: MINIO_SECRET_KEY}
+          ports:
+            - containerPort: 9000
+            - containerPort: 9001
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 50Gi     # 원시 클립 341 MiB × N. 로컬 오버레이에서 줄인다
+---
+# 버킷 부트스트랩. `mc mb --ignore-existing` 이라 재실행해도 안전하다.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: fleetsentinel
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:RELEASE.2025-04-08T15-39-49Z
+          env:
+            - name: AK
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: MINIO_ACCESS_KEY}
+            - name: SK
+              valueFrom:
+                secretKeyRef: {name: fleet-secrets, key: MINIO_SECRET_KEY}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              until mc alias set local http://minio:9000 "$AK" "$SK" >/dev/null 2>&1; do
+                echo "minio 대기..."; sleep 5
+              done
+              mc mb --ignore-existing local/warehouse
+              mc mb --ignore-existing local/checkpoints
+              mc mb --ignore-existing local/fleet-raw
+              mc ls local
