@@ -1,0 +1,36 @@
+{
+  "type": "record",
+  "name": "PerceptionObject",
+  "namespace": "io.fleetsentinel.telemetry",
+  "doc": "② 인지 산출 1건 = 3D 박스 하나(data-design.md §5.2). 이 프로젝트는 인지 모델을 만들지 않으므로(SDD L-4) 모델 출력 자리에 nuScenes 정답 라벨을 놓는다. vehicle_id·boot_id·seq는 전송 봉투가 정본이라 여기 없다(SDD S-11).",
+  "fields": [
+    {"name": "scene_id", "type": "string"},
+    {"name": "sample_id", "type": "string", "doc": "키프레임 토큰. 센서 간 조인의 동기화 앵커(§6.2)"},
+    {
+      "name": "sensor_time",
+      "type": {"type": "long", "logicalType": "timestamp-micros"},
+      "doc": "키프레임 시각"
+    },
+
+    {"name": "track_id", "type": "string", "doc": "동일 객체의 시간축 연속 식별자 — 컷인·추월 마이닝의 근거(§9)"},
+    {"name": "category", "type": "string", "doc": "vehicle.car 등. 분류체계 23종 중 mini에 18종 등장"},
+    {"name": "attribute", "type": ["null", "string"], "default": null, "doc": "vehicle.moving / pedestrian.standing 등. 없을 수 있다"},
+
+    {"name": "center_x", "type": "double", "doc": "박스 중심. 글로벌 프레임 ENU 미터(§7.2)"},
+    {"name": "center_y", "type": "double"},
+    {"name": "center_z", "type": "double"},
+
+    {"name": "size_w", "type": "double", "doc": "(width, length, height) 순서 — §10.3 좌표 종단 검증에서 실측 확정"},
+    {"name": "size_l", "type": "double"},
+    {"name": "size_h", "type": "double"},
+
+    {"name": "rot_w", "type": "double", "doc": "박스 자세 쿼터니언 (w,x,y,z). |q|≈1"},
+    {"name": "rot_x", "type": "double"},
+    {"name": "rot_y", "type": "double"},
+    {"name": "rot_z", "type": "double"},
+
+    {"name": "visibility", "type": "string", "doc": "v0-40 / v40-60 / v60-80 / v80-100 — 카메라에 보이는 비율. mini 분포는 §8.1"},
+    {"name": "num_lidar_pts", "type": "int", "doc": "박스 내 LiDAR 포인트 수. 0이 23.1%이며 라벨 신뢰도 프록시다(§8.1)"},
+    {"name": "num_radar_pts", "type": "int", "doc": "박스 내 레이더 포인트 수. 0이 68.4%"}
+  ]
+}

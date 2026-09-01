@@ -1,0 +1,40 @@
+{
+  "type": "record",
+  "name": "VehicleSignal",
+  "namespace": "io.fleetsentinel.telemetry",
+  "doc": "① 신호 계층 1건 = 한 채널의 한 샘플(data-design.md §5.1). 채널 네이티브 주기 그대로이며 다운샘플하지 않는다 — ego_pose 시각에 결합하면 zoesensors 943.8Hz가 19.7Hz로 깎여 98.5%가 버려진다(§4.2). vehicle_id·boot_id·seq는 이 레코드에 없다: 전송 봉투가 정본이고 신원은 클라이언트 인증서에서만 나온다(SDD S-11).",
+  "fields": [
+    {"name": "scene_id", "type": "string", "doc": "소속 장면"},
+    {
+      "name": "channel",
+      "type": "string",
+      "doc": "zoesensors / ms_imu / zoe_veh_info / steeranglefeedback / pose / ego_pose / vehicle_monitor (§4.2)"
+    },
+    {
+      "name": "sensor_time",
+      "type": {"type": "long", "logicalType": "timestamp-micros"},
+      "doc": "센서 자체 클럭. 정본 시간축 — 파티션·정렬 기준(§6.1)"
+    },
+    {
+      "name": "log_time",
+      "type": {"type": "long", "logicalType": "timestamp-micros"},
+      "doc": "온보드 기록 시각. 재생기에는 별도의 온보드 클럭이 없어 sensor_time과 같은 값이 들어간다 — 실차량에서만 buffering 지연이 관측된다"
+    },
+
+    {
+      "name": "values_num",
+      "type": {"type": "map", "values": "double"},
+      "doc": "스칼라 값 37종. 정수 필드(odom·battery_level·gear_position 등)도 double로 넓힌다 — 모두 2^53 안이라 무손실이고, 맵 하나로 유지하는 편이 하류 스키마를 단순하게 한다"
+    },
+    {
+      "name": "values_vec",
+      "type": {"type": "map", "values": {"type": "array", "items": "double"}},
+      "doc": "벡터 값. 키 이름 9종(채널·키 쌍으로는 10). 길이 3(위치·가속도·각속도) 또는 4(쿼터니언). 쿼터니언은 (w,x,y,z) 순서이며 |q|≈1 검증 대상(§8.3)"
+    },
+    {
+      "name": "values_str",
+      "type": {"type": "map", "values": "string"},
+      "doc": "문자열 값. 현재 ego_pose 의 location 하나뿐이다"
+    }
+  ]
+}
