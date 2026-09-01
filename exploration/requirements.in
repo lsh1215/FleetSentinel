@@ -16,3 +16,9 @@ mcap==1.4.0
 python-ulid==4.0.1
 pytest==9.1.1
 numpy>=2.1          # devkit 선언(<2)을 의도적으로 무시 — setup-venv.sh 참고
+
+# 수집 게이트웨이 경로. grpcio는 Java grpc-java와 버전 계열이 다르다(와이어는 무관).
+grpcio==1.83.0
+grpcio-tools==1.83.0   # ingest.proto → Python 스텁 재생성용
+fastavro==1.12.2       # schemas/*.avsc 로 레코드 본문 인코딩
+confluent-kafka==2.15.0  # verify_kafka.py — 적재분을 직접 꺼내 계약과 대조

@@ -21,7 +21,11 @@ echo "[1/2] devkit + 도구 설치 (numpy<2가 함께 깔린다)"
   rerun-sdk==0.23.1 \
   mcap==1.4.0 \
   python-ulid==4.0.1 \
-  pytest==9.1.1
+  pytest==9.1.1 \
+  grpcio==1.83.0 \
+  grpcio-tools==1.83.0 \
+  fastavro==1.12.2 \
+  confluent-kafka==2.15.0
 
 echo "[2/2] numpy를 2.x로 덮어쓰기 (devkit 선언은 의도적으로 무시)"
 ./.venv/bin/pip install -q -U 'numpy>=2.1'
