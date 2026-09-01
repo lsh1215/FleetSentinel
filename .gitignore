@@ -59,3 +59,13 @@ frontend/dist/
 frontend/public/fixture/
 frontend/public/rrd/
 *.tsbuildinfo
+
+# 개발용 사설 PKI — 개인키가 평문이다. 커밋하지 않는다(SDD L-7).
+pki/
+exploration/wal-run/
+
+# Maven 빌드 산출물
+target/
+
+# proto에서 생성된 Python 스텁은 커밋한다 — grpcio-tools 없이도 재생기를 읽을 수 있어야
+# 하고, 생성 후 상대 임포트로 고치는 수동 단계가 있어 재생성이 자동이 아니다.
