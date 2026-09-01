@@ -72,7 +72,7 @@ ack을 만들어야 한다.**
 
 #### P-A3. 매 레코드 ack은 낭비다
 
-차량당 1,295 rec/s([데이터 설계](data-design.md) §3.4)에서 500대면 **647,500 ack/s**다.
+차량당 1,295 rec/s([데이터 설계](data-design.md) §4.4)에서 500대면 **647,500 ack/s**다.
 ack 하나가 수십 바이트라도 되돌아오는 트래픽과 처리 비용이 무시할 수 없다.
 
 #### P-A4. 재개 지점을 누가 아는가
@@ -454,6 +454,6 @@ assert d.stats().lost == 0 and d.stats().too_old == 0
 | # | 항목 |
 |---|---|
 | 1 | **스트림 fencing** — A-L1. 순서 있는 세대 번호를 `boot_id`와 함께 둘지, `boot_id`를 순서 있는 값으로 바꿀지 |
-| 2 | **`seq` 필드를 데이터 계약에 반영** — [데이터 설계](data-design.md) §4에서 `event_id` 제거 |
+| 2 | **`seq` 필드를 데이터 계약에 반영** — [데이터 설계](data-design.md) §5에서 `event_id` 제거 |
 | 3 | **구조화 계층의 Bronze** — [SDD](sdd.md) L-11 |
 | 4 | **채널별 내구성 차등** — `zoesensors`가 WAL 쓰기의 72%다([WAL 설계](wal-design.md) §4) |
