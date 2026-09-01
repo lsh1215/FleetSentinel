@@ -1,0 +1,62 @@
+{
+  "type": "record",
+  "name": "SegmentRef",
+  "namespace": "io.fleetsentinel.telemetry",
+  "doc": "③ 원시 로그 참조 1건(data-design.md §5.3). 세그먼트 파일 자체가 아니라 **그것을 가리키는 보관증**이다 — 파일은 298~341 MiB로 오브젝트 스토리지에 있고 이 레코드는 2 KiB 미만으로 버스를 탄다(Claim-Check, SDD S-1). vehicle_id·boot_id·seq는 전송 봉투가 정본이라 여기 없다(SDD S-11).",
+  "fields": [
+    {
+      "name": "segment_id",
+      "type": "string",
+      "doc": "ULID. blob 의 정체다 — 전송 헤더가 레코드의 정체라면 이쪽은 파일의 정체이므로 둘 다 필요하다. 게이트웨이가 발급한다(차량이 정하면 남의 클립 id를 주장할 수 있다)"
+    },
+    {"name": "scene_id", "type": ["null", "string"], "default": null, "doc": "재생기에만 있는 값. 실차량에는 없어서 nullable 이다"},
+
+    {
+      "name": "blob_uri",
+      "type": "string",
+      "doc": "s3://bucket/v1/vehicle_id=<id>/date=<YYYY-MM-DD>/<segment_id>.mcap. date 는 t_start 의 UTC 날짜이며 업로드 시각이 아니다(heavy-path-design.md §3)"
+    },
+    {
+      "name": "t_start",
+      "type": {"type": "long", "logicalType": "timestamp-micros"},
+      "doc": "세그먼트 시간 범위 시작. 저장 계층 파티션 기준"
+    },
+    {"name": "t_end", "type": {"type": "long", "logicalType": "timestamp-micros"}},
+
+    {
+      "name": "sensor_channels",
+      "type": {"type": "array", "items": "string"},
+      "doc": "포함 채널. 12개가 다 없으면 센서 결손이다(§8.3 검증 규칙)"
+    },
+    {"name": "size_bytes", "type": "long", "doc": "> 0"},
+    {
+      "name": "checksum",
+      "type": "string",
+      "doc": "sha256 hex. multipart ETag 는 MD5-of-MD5 라 콘텐츠 해시가 아니어서 쓸 수 없다(heavy-path-design.md §4.3)"
+    },
+    {"name": "sample_count", "type": "int", "doc": "> 0. MCAP 안의 메시지 수"},
+
+    {
+      "name": "state",
+      "type": {
+        "type": "enum",
+        "name": "SegmentState",
+        "symbols": ["UPLOADED", "DROPPED"],
+        "default": "UPLOADED"
+      },
+      "doc": "DROPPED 는 트리거 예산을 넘겨 업로드를 포기한 클립이다(heavy-path-design.md §6.3). 파일은 없지만 '그때 그런 클립이 있었고 버렸다'는 사실은 남는다 — 중량 경로의 목표는 유실 0이 아니라 **버린 것을 아는 것**이다"
+    },
+    {
+      "name": "drop_reason",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "state=DROPPED 일 때만 채운다. 예: queue_full, upload_failed_permanently"
+    },
+
+    {
+      "name": "calibration",
+      "type": {"type": "map", "values": "string"},
+      "doc": "채널별 센서 외부/내부 파라미터를 JSON 문자열로. 이게 없으면 MCAP 만으로 3D 재구성이 불가능하다 — 점군은 센서 프레임, 3D 박스는 글로벌 프레임이라 정렬되지 않는다(data-design.md §7.2). MCAP 안에도 /tf/calibration 으로 들어가지만, 카탈로그만 보고 재생 가능 여부를 알려면 참조에도 필요하다"
+    }
+  ]
+}
