@@ -22,7 +22,9 @@ done
 
 echo "== 2. kafka topics (RF=3) =="
 topics=$($COMPOSE exec -T kafka1 sh -c "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list" 2>/dev/null || true)
-for t in telemetry.raw telemetry.dlq; do
+# create-topics.sh가 만드는 것과 같아야 한다. 어긋나면 스모크가 지키려던
+# RF=3 / min.insync.replicas=2(ADR-009) 단언이 조용히 사라진다.
+for t in telemetry.records telemetry.dlq; do
   if echo "$topics" | grep -qx "$t"; then
     desc=$($COMPOSE exec -T kafka1 sh -c "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic $t" 2>/dev/null)
     rf=$(echo "$desc" | grep -o 'ReplicationFactor: [0-9]*' | head -1 | awk '{print $2}')
