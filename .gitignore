@@ -71,8 +71,6 @@ target/
 # 하고, 생성 후 상대 임포트로 고치는 수동 단계가 있어 재생성이 자동이 아니다.
 
 # 로컬 전용 문서 — 저장소에는 설계 정본(docs/sdd.md · docs/data-design.md)만 둔다.
-# 실수로 다시 커밋되지 않게 막는다.
-docs/heavy-path-design.md
-gateway/README.md
-api/README.md
-k8s/README.md
+# 개별 경로가 아니라 디렉터리 하나로 막는다. 규칙이 하나면 실수로 새어 나갈 자리가 없다.
+# 무엇이 왜 거기 있는지는 .local-docs/INDEX.md 참조.
+.local-docs/
