@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import struct
+import threading
 import uuid
 import time
 import zlib
@@ -96,6 +97,20 @@ class Wal:
         commit_bytes: int = DEFAULT_COMMIT_BYTES,
         max_disk_bytes: int | None = None,
     ) -> None:
+        # 세그먼트 파일을 만지는 모든 작업을 직렬화한다.
+        #
+        # ack이 **다른 스레드에서** 올 수 있다 — `GrpcTransport`의 CACK 리더가 그렇다.
+        # 그러면 `commit()`이 세그먼트를 unlink 하는 동안 배송기 스레드의
+        # `WalCursor._drain`이 같은 경로를 `exists()` 확인 후 `open()` 하게 되고,
+        # 그 사이에 파일이 사라지면 `FileNotFoundError`로 죽는다.
+        #
+        # 재진입 락인 이유는 `append()` → `_enforce_disk_cap()` 처럼 안에서 다시
+        # 잡는 경로가 있기 때문이다.
+        #
+        # ⚠️ 이 락을 네트워크 전송 구간까지 넓히면 안 된다. `WalShipper.pump()`는
+        #    `cursor.read()`(락 안)와 `transport.send()`(락 밖)를 분리해서 쓴다.
+        self._lock = threading.RLock()
+
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.segment_bytes = segment_bytes
@@ -146,28 +161,29 @@ class Wal:
         **센서 콜백을 막지 않는다** — 버퍼에 쓰고 조건이 되면 fsync한다. fsync를 매번 하면
         초당 1,295회가 되어 eMMC가 버티지 못한다(설계 §3.3).
         """
-        seq = self._next_seq
-        body = struct.pack("<QB", seq, kind) + payload
-        crc = zlib.crc32(body) & 0xFFFFFFFF
-        frame = HEADER.pack(len(payload), crc, seq, kind) + payload
+        with self._lock:
+            seq = self._next_seq
+            body = struct.pack("<QB", seq, kind) + payload
+            crc = zlib.crc32(body) & 0xFFFFFFFF
+            frame = HEADER.pack(len(payload), crc, seq, kind) + payload
 
-        assert self._fh is not None
-        self._fh.write(frame)
-        self._seg_bytes += len(frame)
-        self._unsynced += len(frame)
-        self._next_seq = seq + 1
-        self._appended += 1
+            assert self._fh is not None
+            self._fh.write(frame)
+            self._seg_bytes += len(frame)
+            self._unsynced += len(frame)
+            self._next_seq = seq + 1
+            self._appended += 1
 
-        if self._seg_bytes >= self.segment_bytes:
-            self._sync()
-            self._fh.close()
-            self._open_segment(self._next_seq)
-        elif self._should_sync():
-            self._sync()
+            if self._seg_bytes >= self.segment_bytes:
+                self._sync()
+                self._fh.close()
+                self._open_segment(self._next_seq)
+            elif self._should_sync():
+                self._sync()
 
-        if self.max_disk_bytes is not None:
-            self._enforce_disk_cap()
-        return seq
+            if self.max_disk_bytes is not None:
+                self._enforce_disk_cap()
+            return seq
 
     def _should_sync(self) -> bool:
         return (
@@ -214,20 +230,31 @@ class Wal:
         정밀할 필요가 없다 — 뒤처지면 재시작 후 재전송이 생기고, 그건 중복이며
         하류 dedup이 흡수한다.
         """
-        tmp = self.root / (COMMIT_FILE + ".tmp")
-        tmp.write_bytes(struct.pack("<Q", seq))
-        with open(tmp, "rb") as f:
-            os.fsync(f.fileno())
-        tmp.replace(self.root / COMMIT_FILE)  # 원자적 교체
-        self._truncate_before(seq)
+        with self._lock:
+            tmp = self.root / (COMMIT_FILE + ".tmp")
+            tmp.write_bytes(struct.pack("<Q", seq))
+            with open(tmp, "rb") as f:
+                os.fsync(f.fileno())
+            tmp.replace(self.root / COMMIT_FILE)  # 원자적 교체
+            self._truncate_before(seq)
+
+    @property
+    def next_seq(self) -> int:
+        """다음에 발급될 `seq`. 재개 시 "이번에 새로 적재한 구간"의 시작점이다.
+
+        복구 후 값이므로 빈 WAL이면 0, 기존 로그가 있으면 그 다음 번호다.
+        """
+        with self._lock:
+            return self._next_seq
 
     @property
     def committed_seq(self) -> int:
-        p = self.root / COMMIT_FILE
-        if not p.exists():
-            return -1
-        raw = p.read_bytes()
-        return struct.unpack("<Q", raw)[0] if len(raw) == 8 else -1
+        with self._lock:
+            p = self.root / COMMIT_FILE
+            if not p.exists():
+                return -1
+            raw = p.read_bytes()
+            return struct.unpack("<Q", raw)[0] if len(raw) == 8 else -1
 
     # ── 복구 ────────────────────────────────────────────────────────────
 
@@ -359,19 +386,25 @@ class WalCursor:
         self._offset = 0
 
     def read(self, limit: int) -> list[WalRecord]:
-        """최대 `limit`개를 이어서 읽는다. 더 없으면 빈 리스트."""
-        if self._wal._fh is not None:
-            self._wal._fh.flush()  # 방금 append한 꼬리를 보이게 한다
-        out: list[WalRecord] = []
-        while len(out) < limit:
-            if self._path is None and not self._locate():
-                break
-            if self._drain(limit - len(out), out) == 0:
-                nxt = self._next_segment()
-                if nxt is None:
+        """최대 `limit`개를 이어서 읽는다. 더 없으면 빈 리스트.
+
+        WAL 락 안에서 돈다 — ack 스레드의 `commit()`이 세그먼트를 unlink 하는 것과
+        직렬화되어야 `exists()` 직후 파일이 사라지는 창이 닫힌다. 전송은 호출부
+        (`WalShipper.pump`)가 이 메서드 **바깥에서** 하므로 네트워크가 락을 물지 않는다.
+        """
+        with self._wal._lock:
+            if self._wal._fh is not None:
+                self._wal._fh.flush()  # 방금 append한 꼬리를 보이게 한다
+            out: list[WalRecord] = []
+            while len(out) < limit:
+                if self._path is None and not self._locate():
                     break
-                self._path, self._offset = nxt, 0
-        return out
+                if self._drain(limit - len(out), out) == 0:
+                    nxt = self._next_segment()
+                    if nxt is None:
+                        break
+                    self._path, self._offset = nxt, 0
+            return out
 
     def _locate(self) -> bool:
         segments = self._wal._segments()
