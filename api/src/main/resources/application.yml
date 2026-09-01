@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: fleetsentinel-api
+
+  datasource:
+    # ⚠️ FINAL 뷰만 읽는다. _raw 를 직접 질의하면 머지 전 중복이 보인다(SDD L-14).
+    url: ${CLICKHOUSE_URL:jdbc:ch://localhost:8124/fleet}
+    username: ${CLICKHOUSE_USER:fleet}
+    password: ${CLICKHOUSE_PASSWORD:fleet}
+    driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
+    hikari:
+      maximum-pool-size: 8
+      connection-timeout: 10000
+
+server:
+  port: ${API_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+fleetsentinel:
+  api:
+    # SSE 푸시 주기. 프론트가 4Hz 로 화면을 갱신하므로(frontend-tech-notes Q5)
+    # 그보다 빠르게 보낼 이유가 없다.
+    push-interval-ms: 250
+    # 한 번에 밀어 넣을 신호 레코드 수 상한. 초당 1,308건이 들어오므로
+    # 무제한이면 브라우저가 먼저 무너진다.
+    max-records-per-push: 200
+
+logging:
+  level:
+    io.fleetsentinel.api: INFO
