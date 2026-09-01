@@ -733,8 +733,8 @@ PYTHONPATH=. .venv/bin/python scripts/measure_dataset.py --dataroot ../data/nusc
 | 학습셋 버저닝 | **결정** — 불변 매니페스트. Iceberg 스냅샷은 보류. [`sdd.md`](sdd.md) S-8 |
 | Kafka 토픽 구성 | **결정** — `telemetry.records` **하나**. 계층별로 나누면 `seq` 단일 수열이 조각나 dedup 이 연속성을 볼 수 없다(§5.0). 계층 구분은 `kind` 헤더, 분기는 Flink 이후 |
 | 저장 계층 테이블 정의·파티션·정렬 키 | **결정** — `infra/clickhouse/001-schema.sql`. `ReplacingMergeTree` + `ORDER BY (vehicle_id, boot_id, seq)` + **`FINAL` 뷰** |
-| 중량 경로(원시 → 오브젝트 스토리지) | **설계** — presigned URL 인가·키 스킴·multipart·고아 방지. [`heavy-path-design.md`](heavy-path-design.md) |
-| 보존 기간·수명주기 | 미정 — [중량 경로 설계](heavy-path-design.md) H-3 |
+| 중량 경로(원시 → 오브젝트 스토리지) | **설계** — presigned URL 인가·키 스킴·multipart·고아 방지. [`sdd.md`](sdd.md) S-1·S-2·S-6, 구현은 `gateway/…/SegmentUploadService` |
+| 보존 기간·수명주기 | 미정 |
 
 **§5의 필드 계약은 데이터 사실이고, "바이트로 어떻게 만드는가"는 전송 설계다.** 직렬화
 포맷이 Avro로 정해졌지만 그 결정의 근거는 이 문서가 아니라 전송 설계에 있다.

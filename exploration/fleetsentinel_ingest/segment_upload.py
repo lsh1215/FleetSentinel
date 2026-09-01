@@ -1,12 +1,10 @@
 """중량 경로 클라이언트 — MCAP 클립을 오브젝트 스토리지로 올린다.
 
-`heavy-path-design.md` §2·§4·§5의 구현이다.
-
 ## 데이터는 게이트웨이를 거치지 않는다
 
 게이트웨이는 **presigned URL만 발급**하고, 298~341 MiB의 MCAP은 차량에서 오브젝트
 스토리지로 직행한다. 게이트웨이를 데이터 경로에 넣으면 100대에서 2.5 GiB/s가 통과해
-stateless 확장 이점이 사라진다(§2.1 후보 B 기각).
+stateless 확장 이점이 사라진다 — 게이트웨이를 프록시로 두는 안을 기각한 이유다.
 
 ## 고아 파일을 만들지 않는다
 
@@ -17,7 +15,7 @@ stateless 확장 이점이 사라진다(§2.1 후보 B 기각).
 4. 전송기가 발행 → CACK → 커밋 → 의도 파일 삭제
 ```
 
-1이 durable하므로 **어디서 죽든 재시작 후 미완결 `segment_id`를 열거할 수 있다**(§5.1).
+1이 durable하므로 **어디서 죽든 재시작 후 미완결 `segment_id`를 열거할 수 있다**.
 고아가 안 생기는 게 아니라, 생겨도 반드시 발견되는 것으로 성질이 바뀐다.
 
 ## ⚠️ 의도를 WAL에 넣지 않는 이유
@@ -36,7 +34,7 @@ WAL의 `seq`는 차량별로 빈틈없이 이어져야 하고, 하류는 **결�
 ## 재개
 
 `(segment_id, upload_id, 완료 파트)`를 WAL과 같은 디스크에 둔다. 프로세스가 죽어도
-재시작 후 이미 올라간 파트를 다시 보내지 않는다(§4.1).
+재시작 후 이미 올라간 파트를 다시 보내지 않는다.
 """
 
 from __future__ import annotations
@@ -58,7 +56,7 @@ __all__ = [
 ]
 
 #: 파트 크기. 341 MiB 클립 → 22파트. S3 최소가 5 MiB이고, 크면 재전송 손실이 크고
-#: 작으면 요청 수가 는다(§4).
+#: 작으면 요청 수가 는다.
 DEFAULT_PART_SIZE = 16 * 1024 * 1024
 
 #: 업로드 상태 파일 이름. WAL과 같은 디렉터리에 둔다 — 같이 살아남아야 재개가 성립한다.
@@ -93,7 +91,7 @@ class UploadState:
     part_size: int
     sha256: str
     #: 키 재구성에 필요하다 — 게이트웨이가 (vehicle_id, segment_id, t_start)로 키를
-    #: 만든다(§3). 재시작 후에도 알아야 하므로 상태에 남긴다.
+    #: 만든다. 재시작 후에도 알아야 하므로 상태에 남긴다.
     t_start_us: int = 0
     #: 완료된 파트. `{part_number: etag}`
     parts: dict = field(default_factory=dict)
@@ -182,7 +180,7 @@ class SegmentUploader:
         """클립 하나를 끝까지 올린다.
 
         :param on_intent: 의도 파일이 fsync된 직후 불린다. 관측용 훅이며 durability는
-            이미 확보돼 있다(§5.1)
+            이미 확보돼 있다
         :returns: 완료된 상태. `blob_uri`가 확정돼 있다
         """
         from .proto import ingest_pb2
@@ -226,7 +224,7 @@ class SegmentUploader:
         """미완결 업로드를 이어간다. **이미 올라간 파트는 다시 보내지 않는다.**
 
         URL은 만료됐을 수 있으므로 `Refresh`로 다시 발급받는다. 게이트웨이는 상태를 갖지
-        않으므로 같은 `upload_id`로 서명만 새로 해준다(§4.1).
+        않으므로 같은 `upload_id`로 서명만 새로 해준다.
         """
         from .proto import ingest_pb2
 

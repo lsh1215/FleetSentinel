@@ -31,7 +31,7 @@ spec:
     spec:
       containers:
         - name: gateway
-          # 이미지는 별도 빌드가 필요하다 — 이 저장소에 Dockerfile 이 아직 없다(k8s/README 참조).
+          # 이미지는 별도 빌드가 필요하다 — 이 저장소에 Dockerfile 이 아직 없다.
           image: fleetsentinel/gateway:0.1.0
           ports:
             - name: grpc

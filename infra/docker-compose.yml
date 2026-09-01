@@ -127,7 +127,7 @@ services:
   # 버킷 부트스트랩, 1회 실행 후 종료
   #   warehouse   — Iceberg(보류, SDD §1.5)
   #   checkpoints — Flink 체크포인트
-  #   fleet-raw   — 원시 센서 클립(중량 경로, heavy-path-design.md §3)
+  #   fleet-raw   — 원시 센서 클립(중량 경로, SDD S-1)
   # ⚠️ entrypoint 는 folded scalar(>) 라 줄바꿈이 공백이 된다. 안에 '#' 를 넣으면
   #    그 뒤가 전부 셸 주석이 되어 버킷 생성이 조용히 건너뛰어진다.
   minio-init:

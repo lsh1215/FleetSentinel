@@ -165,6 +165,6 @@ spec:
               mountPath: /jobs
       volumes:
         # 잡 JAR 을 ConfigMap 으로 넣기엔 42 MB 라 너무 크다.
-        # 실제로는 이미지에 굽거나 오브젝트 스토리지에서 받아야 한다 — k8s/README 참조.
+        # 실제로는 이미지에 굽거나 오브젝트 스토리지에서 받아야 한다.
         - name: jobs
           emptyDir: {}

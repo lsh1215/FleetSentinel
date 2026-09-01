@@ -34,7 +34,7 @@ public class ObjectStoreProperties {
     /**
      * presigned URL 만료.
      *
-     * <p>최악 클립 업로드가 42초다([중량 경로 설계](heavy-path-design.md) §6.2).
+     * <p>최악 클립 업로드가 42초다.
      * 20배 여유를 두되, 길수록 유출된 URL의 창이 커진다.
      */
     private Duration presignTtl = Duration.ofMinutes(15);

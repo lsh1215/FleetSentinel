@@ -15,7 +15,7 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
  * S3 클라이언트 + presigner.
  *
  * <p><b>게이트웨이가 스토리지 자격증명을 갖는다.</b> 차량에서 걷어낸 문제를 여기로 옮긴
- * 것이므로([중량 경로 설계](heavy-path-design.md) H-6), 운영에서는 IAM 역할을
+ * 것이므로(SDD L-7), 운영에서는 IAM 역할을
  * `PutObject` + 이 버킷 접두사로 최소화해야 한다. 로컬은 MinIO 루트 계정이다.
  */
 @Configuration(proxyBeanMethods = false)

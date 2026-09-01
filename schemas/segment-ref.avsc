@@ -14,7 +14,7 @@
     {
       "name": "blob_uri",
       "type": "string",
-      "doc": "s3://bucket/v1/vehicle_id=<id>/date=<YYYY-MM-DD>/<segment_id>.mcap. date 는 t_start 의 UTC 날짜이며 업로드 시각이 아니다(heavy-path-design.md §3)"
+      "doc": "s3://bucket/v1/vehicle_id=<id>/date=<YYYY-MM-DD>/<segment_id>.mcap. date 는 t_start 의 UTC 날짜이며 업로드 시각이 아니다"
     },
     {
       "name": "t_start",
@@ -32,7 +32,7 @@
     {
       "name": "checksum",
       "type": "string",
-      "doc": "sha256 hex. multipart ETag 는 MD5-of-MD5 라 콘텐츠 해시가 아니어서 쓸 수 없다(heavy-path-design.md §4.3)"
+      "doc": "sha256 hex. multipart ETag 는 MD5-of-MD5 라 콘텐츠 해시가 아니어서 쓸 수 없다"
     },
     {"name": "sample_count", "type": "int", "doc": "> 0. MCAP 안의 메시지 수"},
 
@@ -44,7 +44,7 @@
         "symbols": ["UPLOADED", "DROPPED"],
         "default": "UPLOADED"
       },
-      "doc": "DROPPED 는 트리거 예산을 넘겨 업로드를 포기한 클립이다(heavy-path-design.md §6.3). 파일은 없지만 '그때 그런 클립이 있었고 버렸다'는 사실은 남는다 — 중량 경로의 목표는 유실 0이 아니라 **버린 것을 아는 것**이다"
+      "doc": "DROPPED 는 트리거 예산을 넘겨 업로드를 포기한 클립이다. 파일은 없지만 '그때 그런 클립이 있었고 버렸다'는 사실은 남는다 — 중량 경로의 목표는 유실 0이 아니라 **버린 것을 아는 것**이다"
     },
     {
       "name": "drop_reason",

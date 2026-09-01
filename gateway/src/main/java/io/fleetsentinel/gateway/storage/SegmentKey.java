@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
  * </pre>
  *
  * presigned URL은 키를 서명에 포함하므로, 차량 A가 받은 URL로는 A의 경로에만 쓸 수 있다.
- * 키를 바꾸면 서명이 깨진다 — [중량 경로 설계](heavy-path-design.md) §2.3.
+ * 키를 바꾸면 서명이 깨진다.
  */
 public final class SegmentKey {
 

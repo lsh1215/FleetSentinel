@@ -36,8 +36,7 @@ import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignReque
  * 중량 경로 제어 평면. <b>데이터는 지나가지 않는다.</b>
  *
  * <p>게이트웨이가 하는 일은 셋뿐이다 — 신원 확정, 그 신원의 경로로만 유효한 presigned URL
- * 발급, 완료 시 무결성 확인. 298~341 MiB의 MCAP은 차량 → 오브젝트 스토리지로 직행한다
- * ([중량 경로 설계](heavy-path-design.md) §2).
+ * 발급, 완료 시 무결성 확인. 298~341 MiB의 MCAP은 차량 → 오브젝트 스토리지로 직행한다.
  *
  * <p><b>stateless를 유지한다.</b> 어느 파트까지 올렸는지는 차량과 스토리지가 알고 있고,
  * 게이트웨이는 물어보면 URL을 새로 서명해줄 뿐이다. 경량 경로에서 재개 지점을 차량이 정한

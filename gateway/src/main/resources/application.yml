@@ -65,7 +65,7 @@ management:
 fleetsentinel:
   # 중량 경로 오브젝트 스토리지. 로컬은 MinIO, 운영은 S3/GCS.
   # ⚠️ 게이트웨이가 자격증명을 갖는다 — 차량에서 걷어낸 문제를 여기로 옮긴 것이다
-  #    (heavy-path-design.md H-6). 운영에서는 IAM 역할을 PutObject + 이 버킷 접두사로
+  #    (SDD L-7). 운영에서는 IAM 역할을 PutObject + 이 버킷 접두사로
   #    최소화해야 한다.
   object-store:
     bucket: fleet-raw

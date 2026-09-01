@@ -116,7 +116,7 @@ dashboard: ## 대시보드를 **실 API** 로 띄운다 (VITE_API 없으면 목�
 
 k8s-render: ## k8s 매니페스트 렌더 (적용은 하지 않는다)
 	@kubectl kustomize k8s/overlays/local | grep -c '^kind:' | \
-	  xargs -I{} echo "{}개 리소스 렌더 OK — 실제 클러스터 검증은 안 했다(k8s/README)"
+	  xargs -I{} echo "{}개 리소스 렌더 OK — 실제 클러스터 검증은 안 했다(문법까지다)"
 
 verify-kafka: ## Kafka 적재분을 꺼내 Avro 디코딩 + 결번·채널 대조 (BOOT=<boot_id>)
 	@# "보냈다"가 아니라 "저장 계층이 실제로 받았다"를 확인한다.

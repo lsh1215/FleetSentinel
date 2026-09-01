@@ -85,7 +85,7 @@
     </dependency>
 
     <!-- 오브젝트 스토리지. MinIO 는 S3 호환이라 같은 SDK를 쓴다 —
-         엔드포인트와 path-style 만 다르다(heavy-path-design.md §2).
+         엔드포인트와 path-style 만 다르다.
          S3Presigner 는 이 아티팩트에 포함돼 있다(별도 s3-presigner 모듈은 없다). -->
     <dependency>
       <groupId>software.amazon.awssdk</groupId>

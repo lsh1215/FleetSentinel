@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * 오브젝트 키 계약. <b>권한 경계가 이 문자열에 박히므로</b> 여기가 뚫리면 차량이 남의
- * 경로에 쓸 수 있다([중량 경로 설계](heavy-path-design.md) §2.3).
+ * 경로에 쓸 수 있다.
  */
 class SegmentKeyTest {
 

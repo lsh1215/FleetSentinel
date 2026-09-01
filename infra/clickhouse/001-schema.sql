@@ -111,8 +111,8 @@ CREATE TABLE IF NOT EXISTS fleet.segments_raw
     checksum        String,
     sample_count    UInt32,
 
-    -- DROPPED 는 트리거 예산을 넘겨 업로드를 포기한 클립이다
-    -- (heavy-path-design.md §6.3). 파일은 없지만 사실은 남는다.
+    -- DROPPED 는 트리거 예산을 넘겨 업로드를 포기한 클립이다.
+    -- 파일은 없지만 사실은 남는다 — 목표는 유실 0이 아니라 버린 것을 아는 것이다.
     state           Enum8('UPLOADED' = 1, 'DROPPED' = 2),
     drop_reason     Nullable(String),
 
