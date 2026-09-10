@@ -2,11 +2,8 @@
 
 [한국어](README.md) | [English](README-en.md)
 
-A **data platform that ingests, monitors, and curates multimodal sensor data from autonomous vehicles and robots into machine-learning training sets.**
-
-In one sentence:
-
-> This is not a project that trains models. It is **a system that produces the data models are trained on.**
+An autonomous-driving platform for ingesting vehicle signals and sensor files and viewing abnormal
+states in a fleet console.
 
 ![Java](https://img.shields.io/badge/Java_21-ED8B00?style=flat-square&logo=openjdk&logoColor=white)
 ![Python](https://img.shields.io/badge/Python_3.12-3776AB?style=flat-square&logo=python&logoColor=white)
@@ -17,68 +14,35 @@ In one sentence:
 ![React](https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 
-> **Status:** 🚧 **Ingest layer designed · cloud pipeline not built** — data scale/format measured (P1), the vehicle-side loss-prevention path designed and verified (WAL, ack, dedup), and the ops console built. **Kafka→Flink→ClickHouse in between is still empty.**
-> **Docs (Korean):** [System Design Document](docs/sdd.md) · [Data Design](docs/data-design.md) · [Frontend tech notes](docs/frontend-tech-notes.md) · [Ingestion design review](docs/ingestion-design-review.md) · [WAL design](docs/wal-design.md) · [Ack & dedup design](docs/ack-dedup-design.md) · [Provisional pipeline notes](docs/pipeline-notes-provisional.md) · [Runbook](RUN.md)
+Docs (Korean): [System Design Document](docs/sdd.md) · [Data Design](docs/data-design.md) · [Frontend tech notes](docs/frontend-tech-notes.md) · [Ingestion design review](docs/ingestion-design-review.md) · [WAL design](docs/wal-design.md) · [Ack & dedup design](docs/ack-dedup-design.md) · [Runbook](RUN.md)
 
-> **Motivation (Prior Art).** A personal extension of **[AutoNotify](https://github.com/Qualcomm-Capstone)**, a Qualcomm-sponsored capstone on on-device real-time speeding detection. Feedback from a Qualcomm engineer at the final presentation — _"Catching events one vehicle at a time on the edge is solid work. But scale it to a real fleet and the bottleneck moves off the model and onto the ingest, storage, and refinement pipeline"_ — prompted generalizing single-vehicle event handling into a **fleet-scale multimodal sensor platform**. (Qualcomm was not involved in this extension.)
+## Background
+
+This project started from the real-time speeding detection work in [AutoNotify](https://github.com/Qualcomm-Capstone),
+a Qualcomm-sponsored capstone. Feedback from the final presentation was that scaling a single-vehicle
+demo to a fleet requires separate designs for ingestion, storage, and operations.
 
 ## The Problem
 
-Data from a single autonomous vehicle splits into **three layers with fundamentally different
-characteristics** — **signals** (CAN, IMU, steering), **perception** (3D boxes, tracks), and
-**raw sensors** (6 cameras, LiDAR, 5 radars).
+Data from a single autonomous vehicle includes **signals** (CAN, IMU, steering), **object metadata**
+(3D boxes, tracks), and **raw sensors** (6 cameras, LiDAR, 5 radars).
 
-Two facts determine the entire architecture.
+These data types have different transfer sizes and message rates, so they use separate paths.
 
-1. **Raw data is 58× heavier in bandwidth, yet signals carry 8× more messages.** Any attempt to
-   push both through one pipeline collapses.
-2. **One vehicle's raw output exceeds practical LTE throughput.** Not even a single vehicle can
-   stream continuously.
+1. Raw sensor data uses 58× more bandwidth than signals, while signals produce 8× more messages.
+2. One vehicle's raw output exceeds practical LTE throughput, so it cannot be streamed continuously.
 
-The source data also carries limits worth stating plainly: it was collected by **2 vehicles**, and
-the **longest continuous stretch is about 20 seconds**. So **"N vehicles" in this repository means
-N concurrent streams**, not N distinct real vehicles.
+The input data was collected from **2 vehicles**, and the longest continuous stretch is about
+20 seconds. In this repository, **"N vehicles" means N concurrent streams**.
 
-> 📊 **Measured figures (rates, sizes, formats, per-channel detail) and source constraints live in
-> [Data Design](docs/data-design.md) (Korean), which is the single source of truth.** This README
-> does not restate them.
+Measured figures (rates, sizes, formats, and per-channel detail) are listed in [Data Design](docs/data-design.md).
 
 ## Architecture
 
-```
-nuScenes real-world (1000 scenes × 20s)      [CARLA/OpenSCENARIO — augmentation]
-        │
-   ┌────┴─────────────────────────┐
-   │                              │
-① ② light                    ③ heavy (27 MB/s)
- per-record + WAL             triggered clip upload
-   │ gRPC stream (CACK)          │ HTTPS resumable
-   ▼                              ▼
-Kafka 3-broker (RF=3/ISR=2)   Object storage (MCAP originals)
-   │                              │
-   ▼                              │
-Flink exactly-once                │
- dedup keyBy(vehicle_id)+seq      │
- validate → DLQ                   │
- derive ENU→WGS84                 │
-   │                              │
-   ▼                              │
-ClickHouse ◀──── blob_uri ref ────┘
- signal/perception time series · clip catalog
-   │
-   ▼
-Spring Boot 4 API  (REST + SSE live push)
-   │
-   ▼
-React dashboard
- ├─ MapLibre      fleet map
- ├─ uPlot         signal time series
- └─ Rerun viewer  sensor replay (6 cameras · point cloud · 3D boxes)
-```
+![FleetSentinel system architecture](docs/assets/fleetsentinel-architecture.png)
 
-The core idea is **separating light and heavy paths (Claim-Check)**. Only references and
-metadata flow through the message bus; heavy sensor payloads go straight to object storage.
-The two rejoin in the clip catalog.
+Signals and object metadata go through Kafka and Flink. Raw sensor files go to object storage, with
+references recorded in Kafka. ClickHouse's clip catalog connects the two paths.
 
 ## Key Design Decisions
 
@@ -86,86 +50,38 @@ The two rejoin in the clip catalog.
 |---|---|
 | 58× bandwidth asymmetry | **Claim-Check** — references on the bus, payloads in storage |
 | Not even one vehicle can stream continuously | **Triggered clips** — onboard ring buffer, upload ±20s around events |
-| Over a thousand tiny messages/sec | **Per-record gRPC stream + onboard WAL** — batching was reversed: an accumulation window is equivalent to loss ([WAL](docs/wal-design.md)) |
+| Recovery after an interrupted upload | **Per-record gRPC stream + onboard WAL** ([WAL](docs/wal-design.md)) |
 | Sensor rates span hundreds-fold | **Three timestamps** + keyframe synchronization anchor |
 | Coordinates are not lat/lon | **Official-origin ENU→WGS84 conversion** |
 | Raw logs must replay standalone | **MCAP with embedded calibration** |
-| At-least-once ingest, zero-loss proof | **Cumulative Acknowledgement (CACK) + `seq` sliding-window dedup** — a gap in `seq` *is* the loss ([design](docs/ack-dedup-design.md)) |
-| 23% of labels unobserved | **Quality flags as a first-class curation axis** |
-
-Full problem-to-solution mapping is in [SDD §2–§3](docs/sdd.md) (Korean).
+| Duplicate delivery and gap detection | **Cumulative Acknowledgement (CACK) + `seq` sliding-window dedup** ([design](docs/ack-dedup-design.md)) |
+| ODD exits must be visible immediately | **Flink keyed state/timer → Kafka alert → API SSE** |
+| Operators need the source around an alert | **Clip catalog `blob_uri` → object-storage replay** |
 
 ## Stack
 
-| Layer | Choice | Version |
+| Layer | Technology | Role |
 |---|---|---|
-| Stream bus | Apache Kafka (KRaft, 3-broker RF=3/ISR=2) | 4.x |
-| Stream processing | Apache Flink — exactly-once | 2.3 / Java 17 |
-| Raw logs | Object storage + **MCAP** | — |
-| Storage & query | **ClickHouse** | 26.3 LTS |
-| API | **Spring Boot** | 4.0 / Java 21 |
-| Frontend | React + Vite · **MapLibre GL** · uPlot · **Rerun web viewer** | — |
-| Live push | SSE | — |
+| Ingest and buffering | Apache Kafka | Buffers vehicle records, fans them out to processing and storage, and supports replay |
+| Stream processing | Apache Flink | Maintains per-vehicle state for deduplication, validation, coordinate conversion, and ODD detection |
+| Raw storage | Object storage + MCAP | Stores large sensor clips as files for later replay |
+| Time-series storage | ClickHouse | Stores and queries signals, object metadata, and the clip catalog |
+| API | Spring Boot | Exposes ClickHouse queries and Kafka alerts through REST and SSE |
+| Console | React · MapLibre GL · uPlot · Rerun | Shows vehicle positions, signals, alerts, and sensor clips |
 
-**Not adopted** — Elasticsearch/Kibana (spatial indexing is pointless at our row counts, and a
-custom dashboard replaces Kibana), a data warehouse (a 7-day time-travel ceiling makes
-training-set versioning impossible), Iceberg (deferred until snapshot versioning is actually
-needed). Rationale in [SDD §4.1](docs/sdd.md).
-
-Java versions differ per module: Spring Boot 4 supports Java 17–25, but Flink 2.3 defaults to
-Java 17 with 21 still experimental. So the API runs on Java 21 and the Flink job on Java 17.
-
-Writing the Flink job in **PyFlink was rejected** — not on performance, but on the connector/API
-combination: dedup (a per-vehicle bitmap in keyed state) and the official ClickHouse sink both
-require the DataStream API, which is where PyFlink is least comfortable. Rationale and the
-conditions that would reverse this are in [SDD §4.1 A-13](docs/sdd.md).
-
-## Verification
-
-| Gate | Result |
-|---|---|
-| Coordinate conversion contract (pytest) | pass |
-| Lossless raw-sensor preservation | pass — 3 scenes, zero omission vs source of truth |
-| **Coordinate chain, end to end** | pass — LiDAR points inside boxes vs labels, **zero error** |
-| **WAL durability (resume after SIGKILL)** | pass — **zero gaps** in `seq`, 13 tests |
-| **Dedup idempotence & state size** | pass — state unchanged across 50× more data, 14 tests |
-| **Ack protocol (effective exactly-once after SIGKILL)** | pass — resend volume matched a prediction, 13 tests |
-| Frontend (vitest) | pass — 26 tests |
-| Kafka HA (hard broker kill) | pass — zero loss |
-| Infrastructure smoke | pass |
-
-Figures and methods live in [Data Design §9](docs/data-design.md). The coordinate check is the
-decisive one: matching nuScenes' own labels exactly requires all five transform stages to be correct.
-
-## Progress
-
-| Phase | Scope | Status |
-|---|---|---|
-| P0 | Local infrastructure (Kafka HA, Flink, ClickHouse, object storage) | ✅ |
-| **P1** | **Data characterization** — scale/format measurement, coordinate system, losslessness | ✅ |
-| **P1.5** | **Ingest design + vehicle-side loss prevention** — WAL, CACK, `seq` dedup | ✅ verified in the replayer |
-| **P1.6** | **Ops console** — map, time series, clip search, sensor replay | ✅ mock stream |
-| P2 | Schema finalization · **per-record** replayer → Kafka | next |
-| P3 | Flink pipeline · ClickHouse ingestion | |
-| P5 | Spring Boot API — switch the console from mock to real | |
-| P6 | Data engine (scenario mining, training-set manifests) | |
-| P7 | Protocol layer, implemented (gRPC gateway + MQTT for low-rate channels) | |
-| P8 | CARLA augmentation (stretch) | |
-
-**P1.5 and P1.6 landing before P2 was not the plan.** Revisiting the batching decision
-reshaped the whole ingest layer, and proving that design required code. The console came
-early because what the screen needs constrains what the storage schema must hold.
+Signals and object metadata go through Kafka, Flink, and ClickHouse. Raw sensor files go to object
+storage. The two paths are connected by the clip ID and `blob_uri`.
 
 ## Known Limitations
 
-Stated plainly. Full list in [SDD §4.2](docs/sdd.md).
+Current scope and limitations are listed in [SDD §4.2](docs/sdd.md).
 
 - **Not live monitoring.** nuScenes replay reproduces bandwidth, cadence, and format, but there is no real-vehicle integration.
 - **Vehicle-side loss prevention was verified in the replayer only.** WAL, ack, and dedup are implemented and survive SIGKILL with zero `seq` gaps, but real onboard software is out of scope, and the power-loss window (10ms group commit) remains.
-- **The console still runs on a mock stream.** It replays fixtures extracted from real nuScenes data, so the screens and load are realistic, but Kafka→Flink→ClickHouse→API is P2–P5.
+- **The console uses a mock stream by default.** `make dashboard` connects it to the real API, but Kafka→Flink→API latency and recovery have not been measured end to end.
 - **The source is 2 vehicles with a 20-second continuity ceiling.** "N vehicles" means N concurrent streams, not N distinct real vehicles.
 - **Infrastructure HA is out of scope.** A single-host 3-broker setup demonstrates broker-level failover only.
-- **No perception model.** Perception outputs come from nuScenes labels.
+- **3D boxes come from nuScenes annotations.** They are not produced by the vehicle and are used only to show surrounding objects in the dashboard.
 - **Radar payloads unparsed** — `.pcd` files are stored in MCAP but not decoded or visualized.
 
 ## Layout
@@ -174,11 +90,11 @@ Stated plainly. Full list in [SDD §4.2](docs/sdd.md).
 FleetSentinel/
 ├── frontend/         # (React) ops console — map, time series, clip search, sensor replay
 ├── exploration/      # (Python) measurement/verification tools + vehicle-side loss prevention (WAL, ack, dedup)
-├── flink-pipeline/   # (Java) Flink stream processing — rewritten in P3
-├── infra/            # docker-compose (Kafka ×3, Flink, ClickHouse, MinIO, Iceberg REST)
+├── flink-pipeline/   # (Java) dedup, validation, coordinate derivation, ODD detection
+├── infra/            # docker-compose (Kafka ×3, Flink, ClickHouse, MinIO)
 ├── schemas/          # canonical Avro schemas
 ├── scripts/          # infra smoke tests · Kafka HA demo
-└── docs/             # seven design documents
+└── docs/             # design documents
 ```
 
 ## Running
