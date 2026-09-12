@@ -33,7 +33,7 @@
 > | `event_id` + `replay_epoch` | **`seq`가 대체** — `event_id` 제거 |
 >
 > **처리량·대역폭 측정치(§2·§3)는 유효하다.** 무효인 것은 그 위에 세운 전송 결정이다.
-| 구현 | `exploration/fleetsentinel_ingest/batching.py` (탐색 코드, 승격 대상 아님) |
+시간창 함수 `exploration/fleetsentinel_ingest/batching.py`는 현재 대시보드 fixture 생성에만 사용한다.
 
 > ## ⚠️ 이 문서의 배치 결정은 재검토됐다 (2026-08-25)
 >
@@ -323,4 +323,5 @@ Iceberg를 보류하면서 구조화 계층의 append-only 원본이 사라졌�
 
 - 데이터 규모·형식 정본: [`data-design.md`](data-design.md)
 - 시스템 설계: [`sdd.md`](sdd.md)
-- 측정 재현: `exploration/scripts/measure_batching.py`
+- 당시 배치 비교 스크립트는 폐기된 전송 설계 정리 과정에서 삭제했다. 이 문서의 배치 비교 수치는 과거 실험 기록이다.
+- 현재 채널별 측정: `exploration/scripts/measure_dataset.py` (위 배치 비교표의 재현 도구는 아님)

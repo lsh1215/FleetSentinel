@@ -22,7 +22,7 @@
 | 파일 | 역할 |
 |---|---|
 | `fleetsentinel_ingest/geo.py` | ENU ↔ WGS84 변환. **좌표 형식이 무엇인지 알아내기 위해** 구현했다 — `ego_pose`가 위경도가 아니라 로컬 미터라는 것, "보스턴 1.35배"가 Web Mercator 축척계수라는 것을 이걸로 규명했다 |
-| `scripts/measure_batching.py` | 채널별 Hz·레코드 크기 실측. 문서 §3.1의 모든 수치가 여기서 나왔다 |
+| `scripts/measure_dataset.py` | 원천 규모, 채널별 Hz·페이로드 크기, 원시 센서 대역폭 측정 |
 | `scripts/verify_mcap.py` | MCAP 유효성 + **무손실 계약** 검증. 원시 센서 86% 누락을 여기서 잡았다 |
 | `scripts/replay_rerun.py` | 데이터를 눈으로 확인 |
 | `scripts/export_fixture.py` | 대시보드용 픽스처 추출 — 목업 스트림이 난수가 아닌 근거 |
@@ -48,11 +48,10 @@ SIGKILL 후 재개해서 하류가 보는 것이 정확히 한 번인지 재전�
 |---|---|---|
 | `fleetsentinel_ingest/nuscenes_source.py` | 추출기 | |
 | `fleetsentinel_ingest/mcap_writer.py` | MCAP 작성 | |
-| `fleetsentinel_ingest/batching.py` | 전송 배치 정책 | ⚠️ **설계가 뒤집혔다** — 축적 창은 그만큼의 유실이다([설계 검토](../docs/ingestion-design-review.md) §4.1). 측정 하네스로만 남아 있다 |
+| `fleetsentinel_ingest/batching.py` | fixture 시간창 생성 | `export_fixture.py`의 목업 SSE 데이터 생성에 사용 |
 | `scripts/convert_scenes.py` | 변환 CLI | |
-| `scripts/measure_batching.py` | 채널 실측 | 이름이 배치를 가리키지만 측정하는 것은 채널별 Hz·크기다 |
 
-### 테스트 82건
+### 주요 테스트
 
 | 파일 | 건수 | 대상 |
 |---|---|---|
@@ -60,7 +59,7 @@ SIGKILL 후 재개해서 하류가 보는 것이 정확히 한 번인지 재전�
 | `tests/test_wal.py` | 13 | WAL 내구성 — 잘린 꼬리·세그먼트 회수·SIGKILL·`seq` 재사용 방지 |
 | `tests/test_dedup.py` | 14 | 멱등·순서 역전·`boot_id` 리셋·유실 확정·상태 크기 |
 | `tests/test_shipping.py` | 13 | CACK·역압·SIGKILL 후 결과적 exactly-once |
-| `tests/test_batching.py` | 12 | 뒤집힌 배치 정책의 계약 (측정 하네스) |
+| `tests/test_batching.py` | 11 | fixture 시간창 정렬·레코드 보존 |
 
 ## 준비
 
@@ -86,7 +85,7 @@ unzip -q can_bus.zip
 
 ```bash
 # 채널별 Hz·크기 실측 (문서 §3.1의 근거)
-PYTHONPATH=. ./.venv/bin/python scripts/measure_batching.py --dataroot ../data/nuscenes
+PYTHONPATH=. ./.venv/bin/python scripts/measure_dataset.py --dataroot ../data/nuscenes
 
 # nuScenes → MCAP 변환 (장면당 ~357MB)
 PYTHONPATH=. ./.venv/bin/python scripts/convert_scenes.py \
@@ -104,7 +103,7 @@ PYTHONPATH=. ./.venv/bin/python scripts/replay_rerun.py \
 PYTHONPATH=. ./.venv/bin/python scripts/export_fixture.py \
     --dataroot ../data/nuscenes --out ../frontend/public/fixture --scenes 4
 
-# 테스트 82건 — 데이터는 필요 없다 (SIGKILL 테스트가 있어 몇 초 걸린다)
+# 테스트 — 데이터는 필요 없다 (SIGKILL 테스트 포함)
 PYTHONPATH=. ./.venv/bin/python -m pytest tests/ -q
 ```
 

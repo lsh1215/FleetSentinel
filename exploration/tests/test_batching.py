@@ -1,4 +1,4 @@
-"""배치 계약 검증 — docs/sdd.md §3 S-3."""
+"""대시보드 fixture의 시간창 정렬·레코드 보존 검증."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import pytest
 
 from fleetsentinel_ingest.batching import (
     DEFAULT_WINDOW_US,
-    BatchStats,
     batch_by_window,
 )
 
@@ -79,14 +78,3 @@ def test_smaller_window_yields_more_batches() -> None:
     coarse = len(list(batch_by_window(records, "V", window_us=100_000)))
     fine = len(list(batch_by_window(records, "V", window_us=25_000)))
     assert fine > coarse
-
-
-def test_stats_report_message_reduction() -> None:
-    records = [rec(t) for t in range(0, 1_000_000, 1_000)]  # 1000건 / 1초
-    stats = BatchStats()
-    for b in batch_by_window(records, "AV-0001"):
-        stats.observe(b)
-    assert stats.n_records == 1000
-    assert stats.n_batches == 10           # 1초 / 100ms
-    assert stats.mean_records_per_batch == 100.0
-    assert "1/100.0로 감소" in stats.summary()
