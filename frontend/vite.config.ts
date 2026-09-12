@@ -14,6 +14,8 @@ import { mockStreamPlugin } from "./server/mockStream";
 const apiTarget = process.env.VITE_API;
 
 export default defineConfig({
+  // Keep the viewer's import.meta.url relative to its WASM asset in development.
+  optimizeDeps: { exclude: ["@rerun-io/web-viewer"] },
   plugins: [react(), ...(apiTarget ? [] : [mockStreamPlugin()])],
   server: {
     port: 5173,
@@ -36,6 +38,7 @@ export default defineConfig({
   build: {
     target: "es2022",
     rollupOptions: {
+      input: { main: "index.html", replay: "replay.html" },
       output: {
         // 벤더를 분리한다. 앱 코드는 자주 바뀌지만 지도·차트 라이브러리는 거의 안 바뀌므로,
         // 한 청크에 묶어두면 앱을 배포할 때마다 1.3MB를 다시 받게 된다.
