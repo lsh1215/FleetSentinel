@@ -10,8 +10,9 @@ import org.apache.avro.generic.GenericRecord;
 /**
  * 검증·파생까지 끝난 레코드. 싱크가 이걸 그대로 INSERT 한다.
  *
- * <p>신원 3튜플은 별도 필드로, 나머지는 {@link #columns()} 순서대로 담는다 — 싱크의
- * {@code VALUES (?,?,...)} 순서와 1:1이다.
+ * 신원 3종은 각자 필드로 두고, 나머지 컬럼은 columns() 리스트에 순서대로 담는다.
+ * 그 순서가 싱크의 VALUES (?,?,...) 물음표 순서와 그대로 1:1이다 — 순서를 바꾸면
+ * 컬럼이 밀려 들어간다.
  */
 public final class Decoded implements Serializable {
 
@@ -53,7 +54,79 @@ public final class Decoded implements Serializable {
         return columns;
     }
 
-    /** ① 신호. `lat`/`lon` 은 Flink 가 파생한 값이며 실패 시 null 이다(무손실). */
+    public long eventTimeMillis() {
+        int index = switch (kind) {
+            case SIGNAL, PERCEPTION -> 2;
+            case SEGMENT -> 3;
+        };
+        Object value = columns.get(index);
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toInstant().toEpochMilli();
+        }
+        throw new IllegalStateException("event time이 없다: " + kind);
+    }
+
+    public boolean isEgoPose() {
+        return kind == Kind.SIGNAL && "ego_pose".equals(columns.get(1));
+    }
+
+    public boolean isVehicleMonitor() {
+        return kind == Kind.SIGNAL && "fleet_status".equals(columns.get(1));
+    }
+
+    public Double signalNumber(String name) {
+        return kind == Kind.SIGNAL && columns.get(4) instanceof Map<?, ?> values
+                ? number(values.get(name)) : null;
+    }
+
+    public String signalString(String name) {
+        if (kind != Kind.SIGNAL || !(columns.get(6) instanceof Map<?, ?> values)) return null;
+        Object value = values.get(name);
+        return value == null ? null : value.toString();
+    }
+
+    public String signalLocation() {
+        if (kind != Kind.SIGNAL) {
+            return null;
+        }
+        Object values = columns.get(6);
+        if (!(values instanceof Map<?, ?> map)) {
+            return null;
+        }
+        Object location = map.get("location");
+        return location == null ? null : location.toString();
+    }
+
+    public Double latitude() {
+        int index = switch (kind) {
+            case SIGNAL -> 7;
+            case PERCEPTION -> 19;
+            case SEGMENT -> -1;
+        };
+        return index < 0 ? null : number(columns.get(index));
+    }
+
+    public Double longitude() {
+        int index = switch (kind) {
+            case SIGNAL -> 8;
+            case PERCEPTION -> 20;
+            case SEGMENT -> -1;
+        };
+        return index < 0 ? null : number(columns.get(index));
+    }
+
+    public int numLidarPoints() {
+        if (kind != Kind.PERCEPTION) {
+            throw new IllegalStateException("객체 메타데이터 레코드가 아니다: " + kind);
+        }
+        Object value = columns.get(17);
+        if (!(value instanceof Number number)) {
+            throw new IllegalStateException("num_lidar_pts가 없다");
+        }
+        return number.intValue();
+    }
+
+    /** 신호. lat/lon 은 Flink 가 파생한 값이라 실패하면 null 이고, 그래도 행은 살린다. */
     public static Decoded signal(Envelope env, GenericRecord r, Double lat, Double lon) {
         List<Object> c = new ArrayList<>();
         c.add(str(r, "scene_id"));
@@ -68,7 +141,7 @@ public final class Decoded implements Serializable {
         return new Decoded(Kind.SIGNAL, env.vehicleId(), env.bootId(), env.seq(), c);
     }
 
-    /** ② 인지 박스. 좌표가 글로벌 프레임이라 ego 지역을 알아야 파생할 수 있다. */
+    /** ② 객체 메타데이터. 좌표가 글로벌 프레임이라 ego 지역을 알아야 파생할 수 있다. */
     public static Decoded perception(Envelope env, GenericRecord r, Double lat, Double lon) {
         List<Object> c = new ArrayList<>();
         c.add(str(r, "scene_id"));
@@ -110,19 +183,21 @@ public final class Decoded implements Serializable {
 
     // ── Avro → JDBC 변환 ────────────────────────────────────────────────
 
-    /** Avro 문자열은 {@code Utf8} 이라 그대로 넘기면 드라이버가 못 알아본다. */
+    /** Avro 문자열은 String 이 아니라 Utf8 이라, 그대로 넘기면 JDBC 드라이버가 못 알아본다. */
     private static String str(GenericRecord r, String field) {
         Object v = r.get(field);
         return v == null ? null : v.toString();
     }
 
-    /** timestamp-micros → java.sql.Timestamp. ClickHouse DateTime64(6) 에 맞춘다. */
+    /** 마이크로초 정수 → Timestamp. ClickHouse DateTime64(6) 에 맞춘다. */
     private static java.sql.Timestamp micros(GenericRecord r, String field) {
         Object v = r.get(field);
         if (!(v instanceof Number n)) {
             return null;
         }
         long us = n.longValue();
+        // Timestamp 생성자는 밀리초를 받는다. 그래서 밀리초까지만 먼저 넣고,
+        // 잘려 나간 마이크로초 자리를 setNanos 로 따로 채운다(1 µs = 1000 ns).
         var ts = new java.sql.Timestamp(us / 1000);
         ts.setNanos((int) (Math.floorMod(us, 1_000_000L) * 1000L));
         return ts;
@@ -137,7 +212,7 @@ public final class Decoded implements Serializable {
         for (Map.Entry<?, ?> e : m.entrySet()) {
             Object val = e.getValue();
             if (val instanceof List<?> list) {
-                // Array(Float64) 로 넘어갈 벡터
+                // 벡터. ClickHouse 의 Array(Float64) 로 들어간다.
                 List<Double> nums = new ArrayList<>(list.size());
                 for (Object o : list) {
                     nums.add(o instanceof Number n ? n.doubleValue() : null);
@@ -162,5 +237,9 @@ public final class Decoded implements Serializable {
             out.add(o == null ? null : o.toString());
         }
         return out;
+    }
+
+    private static Double number(Object value) {
+        return value instanceof Number number ? number.doubleValue() : null;
     }
 }

@@ -1,5 +1,10 @@
 package io.fleetsentinel.pipeline;
 
+import io.fleetsentinel.pipeline.alert.AlertEvent;
+import io.fleetsentinel.pipeline.alert.AlertJsonSerializationSchema;
+import io.fleetsentinel.pipeline.alert.GeoBounds;
+import io.fleetsentinel.pipeline.alert.OddBoundaryFunction;
+import io.fleetsentinel.pipeline.alert.VehicleMonitorFunction;
 import io.fleetsentinel.pipeline.dedup.DedupFunction;
 import io.fleetsentinel.pipeline.dedup.SeqWindow;
 import io.fleetsentinel.pipeline.model.Decoded;
@@ -7,7 +12,9 @@ import io.fleetsentinel.pipeline.model.DlqRecord;
 import io.fleetsentinel.pipeline.model.Envelope;
 import io.fleetsentinel.pipeline.sink.ClickHouseSink;
 import io.fleetsentinel.pipeline.transform.DecodeFunction;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Map;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.util.ParameterTool;
@@ -26,29 +33,23 @@ import org.apache.flink.util.OutputTag;
 /**
  * FleetSentinel 스트림 처리 잡.
  *
- * <pre>
- * Kafka telemetry.records ─▶ 봉투 파싱 ─▶ dedup ─▶ 디코드+검증+좌표파생 ─▶ ClickHouse
- *                                                        (kind 헤더로 계층 분기)
- *                    │                      │
- *                    └──── DLQ ─────────────┘
- * </pre>
+ *   Kafka telemetry.records ─▶ 봉투 파싱 ─▶ dedup ─▶ 디코드+검증+좌표파생 ─▶ ClickHouse
+ *                                                          (kind 헤더로 계층 분기)
+ *                      │                      │
+ *                      └──── DLQ ─────────────┘
  *
- * <h2>exactly-once의 범위</h2>
+ * exactly-once 는 상태까지다. 체크포인트가 연산자 상태와 Kafka 오프셋을 함께 찍으므로
+ * 복구하면 둘이 같이 되감긴다. 하지만 ClickHouse 는 2PC 를 못 해서 싱크 구간은
+ * at-least-once 이고, 거기서 생기는 중복은 ReplacingMergeTree 가 흡수한다.
+ * 그래서 exactly-once 가 쓰기 시점이 아니라 읽기 시점에 닫힌다.
  *
- * <p>Flink는 <b>상태</b>에 대해 exactly-once다 — 체크포인트가 연산자 상태와 Kafka 오프셋을
- * 함께 스냅샷하므로 복구 시 둘이 같이 되감긴다. 그러나 <b>ClickHouse는 2PC를 못 하므로</b>
- * 싱크 구간은 at-least-once이고, {@code ReplacingMergeTree} 멱등 upsert가 흡수한다.
- * 결과적으로 exactly-once가 <b>읽기 시점에 닫힌다</b>(SDD L-14).
- *
- * <p>제출:
- * <pre>{@code
- * flink run -d target/flink-pipeline-0.1.0.jar \
- *   --bootstrap kafka1:9092 --clickhouse jdbc:ch://clickhouse:8123/fleet
- * }</pre>
+ * 제출:
+ *   flink run -d target/flink-pipeline-0.1.0.jar \
+ *     --bootstrap kafka1:9092 --clickhouse jdbc:ch://clickhouse:8123/fleet
  */
 public final class TelemetryPipeline {
 
-    /** 파싱조차 안 되는 것은 이 태그로 빠진다. */
+    /** 곁가지 출력의 이름표. 본류와 타입이 달라 이걸로 구분한다. 불량 레코드가 여기로 빠진다. */
     public static final OutputTag<DlqRecord> DLQ =
             new OutputTag<>("dlq", org.apache.flink.api.common.typeinfo.TypeInformation.of(DlqRecord.class));
 
@@ -66,6 +67,9 @@ public final class TelemetryPipeline {
         int window = p.getInt("dedup-window", SeqWindow.DEFAULT_WINDOW);
         int batchSize = p.getInt("batch-size", 1000);
         long checkpointMs = p.getLong("checkpoint-ms", 10_000);
+        String alertTopic = p.get("alert-topic", "fleet.alerts");
+        Map<String, GeoBounds> oddBounds = GeoBounds.parseAll(p.getRequired("odd-bounds"));
+        long oddSustainedMs = p.getLong("odd-sustained-ms", 30_000);
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
@@ -86,7 +90,8 @@ public final class TelemetryPipeline {
                 // 계층 분기는 kind 헤더로 DecodeFunction 이 한다.
                 .setTopics(p.get("topic", "telemetry.records"))
                 .setGroupId(group)
-                // earliest: 재처리 가능해야 한다는 것이 Kafka 채택 근거였다(SDD §4.1).
+                // earliest = 토픽 맨 앞부터 읽는다. 재처리가 되어야 한다는 것이
+                // 애초에 Kafka 를 고른 이유였다.
                 .setStartingOffsets(OffsetsInitializer.earliest())
                 .setDeserializer(new EnvelopeDeserializer())
                 .build();
@@ -94,12 +99,16 @@ public final class TelemetryPipeline {
         DataStream<Envelope> raw = env.fromSource(
                 source, WatermarkStrategy.noWatermarks(), "kafka");
 
-        // dedup — 차량별 keyed state. 파티션 키와 같으므로 셔플이 없다.
+        // 차량별로 갈라 같은 차량은 항상 같은 태스크로 보낸다. 그래야 그 차량의
+        // 비트맵 상태를 한 곳에서만 만진다. Kafka 파티션 키도 vehicle_id 라 셔플이 없다.
+        // Envelope::vehicleId 는 env -> env.vehicleId() 를 짧게 쓴 것이다.
         DataStream<Envelope> deduped = raw
                 .keyBy(Envelope::vehicleId)
                 .process(new DedupFunction(window))
                 .name("dedup")
-                .uid("dedup");   // uid를 고정해야 상태를 이어받으며 재배포할 수 있다
+                // uid 는 이 연산자의 고유 이름이다. 고정해 둬야 재배포할 때 Flink 가
+                // 예전 체크포인트의 상태를 같은 연산자에 도로 꽂아 준다.
+                .uid("dedup");
 
         // 디코드 + 검증 + 좌표 파생. 실패는 side output으로 DLQ에 간다.
         SingleOutputStreamOperator<Decoded> decoded = deduped
@@ -110,6 +119,37 @@ public final class TelemetryPipeline {
         decoded.addSink(new ClickHouseSink(chUrl, chUser, chPassword, batchSize))
                 .name("clickhouse")
                 .uid("clickhouse");
+
+        DataStream<AlertEvent> oddAlerts = decoded
+                .filter(Decoded::isEgoPose)
+                .name("odd-input")
+                .keyBy(Decoded::vehicleId)
+                .process(new OddBoundaryFunction(oddBounds, oddSustainedMs))
+                .name("odd-boundary")
+                .uid("odd-boundary");
+
+        DataStream<AlertEvent> monitorAlerts = decoded
+                .filter(Decoded::isVehicleMonitor)
+                .keyBy(Decoded::vehicleId)
+                .process(new VehicleMonitorFunction(p.getLong("stop-after-ms", 30_000),
+                        p.getLong("monitor-stale-ms", 5_000)))
+                .name("vehicle-monitor").uid("vehicle-monitor-v1");
+
+        oddAlerts.union(monitorAlerts)
+                .sinkTo(KafkaSink.<AlertEvent>builder()
+                        .setBootstrapServers(bootstrap)
+                        .setRecordSerializer(KafkaRecordSerializationSchema.<AlertEvent>builder()
+                                .setTopic(alertTopic)
+                                .setKeySerializationSchema(
+                                        event -> event.vehicleId().getBytes(StandardCharsets.UTF_8))
+                                .setValueSerializationSchema(new AlertJsonSerializationSchema())
+                                .build())
+                        // EXACTLY_ONCE는 checkpoint 완료까지 경보를 숨긴다. 경보는 즉시 보이고,
+                        // 장애 중복은 안정적인 event_id로 소비자가 제거하는 편이 맞다.
+                        .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+                        .build())
+                .name("alerts-kafka")
+                .uid("alerts-kafka");
 
         // DLQ. 원본 바이트를 무손실로 보존한다.
         decoded.getSideOutput(DLQ)
