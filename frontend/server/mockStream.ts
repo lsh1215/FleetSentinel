@@ -13,6 +13,7 @@
  *
  * 재현하는 백엔드 계약:
  *   GET /api/stream        SSE. `id:`에 재생 커서(ms)를 실어 Last-Event-ID 재개를 지원한다.
+ *   GET /api/alerts        Flink 전이 이벤트와 같은 계약의 개발용 SSE
  *   GET /api/vehicles      차량 로스터
  *   GET /api/clips         클립 카탈로그
  *   GET /api/health        파이프라인 상태 (Kafka lag, DLQ, 체크포인트)
@@ -146,6 +147,56 @@ export function mockStreamPlugin() {
           timer = setTimeout(pump, 40);
         };
         pump();
+      });
+
+      server.middlewares.use("/api/alerts", (req, res) => {
+        const fx = load(root);
+        const vehicleId = fx.meta.vehicles[0]?.vehicle_id ?? "vehicle-0001";
+        const phases = [
+          ["ODD_EXITED", "WARNING", "차량이 ODD 경계를 벗어났다"],
+          ["ODD_RETURNED", "INFO", "차량이 ODD 경계 안으로 복귀했다"],
+        ] as const;
+        let sequence = 0;
+        let closed = false;
+
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        req.on("close", () => {
+          closed = true;
+          clearInterval(timer);
+          clearTimeout(initialTimer);
+        });
+
+        const send = () => {
+          if (closed) return;
+          const [type, severity, message] = phases[sequence % phases.length]!;
+          const now = Date.now();
+          const eventId = `mock:${vehicleId}:${type}:${sequence}`;
+          res.write(`id: ${eventId}\n`);
+          res.write("event: alert\n");
+          res.write(`data: ${JSON.stringify({
+            eventId,
+            type,
+            severity,
+            vehicleId,
+            bootId: "mock-boot",
+            sourceSeq: sequence,
+            eventTimeMs: now,
+            detectedAtMs: now,
+            location: "singapore-onenorth",
+            latitude: 1.2986,
+            longitude: 103.7885,
+            message,
+          })}\n\n`);
+          sequence += 1;
+        };
+
+        const timer = setInterval(send, 8_000);
+        const initialTimer = setTimeout(send, 1_500);
       });
     },
   };
