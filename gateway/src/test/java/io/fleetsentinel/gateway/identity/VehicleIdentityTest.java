@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 /**
  * 신원 추출 계약. 여기가 뚫리면 유실 0 주장이 깨진다 — dedup이
  * {@code keyBy(vehicle_id) + seq} 윈도우라, 남의 vehicle_id로 seq를 밀면 그 차량의
- * 정상 레코드가 {@code too_old}로 버려진다(SDD S-11).
+ * 정상 레코드가 {@code too_old}로 버려진다(SDD S-9).
  *
  * <p>인증서는 BouncyCastle 없이 만들기 번거로우므로 {@code openssl}로 굽는다. 테스트가
  * openssl에 의존하지만, 실제 발급 경로({@code scripts/gen-certs.sh})와 같은 도구를 쓰므로

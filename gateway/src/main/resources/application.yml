@@ -22,7 +22,7 @@ spring:
             private-key: "file:${FLEETSENTINEL_PKI:./pki}/server/server.key"
           truststore:
             # 이 CA가 발급한 인증서만 통과한다. 공개 CA 신뢰 목록은 쓰지 않는다 —
-            # 차량 신원은 우리가 발급한 것만 유효하다(SDD S-11).
+            # 차량 신원은 우리가 발급한 것만 유효하다(SDD S-9).
             certificate: "file:${FLEETSENTINEL_PKI:./pki}/ca/ca.crt"
 
   kafka:
