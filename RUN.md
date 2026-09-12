@@ -1,10 +1,7 @@
 # FleetSentinel — 로컬 인프라 실행 절차
 
-> **상태.** 이 문서는 **로컬 인프라 계층**만 다룬다. Kafka→Flink→ClickHouse 파이프라인은
-> 아직 구현하지 않았으므로(P2·P3) 기동해도 데이터가 흐르지 않는다.
->
-> 실행할 수 있는 다른 두 갈래는 아래에 있다 — **차량 측 구현 테스트**(§6)와
-> **대시보드**(§7). 둘은 인프라 스택과 독립적으로 돈다.
+> Kafka→Flink→ClickHouse 적재와 Flink→Kafka→API→SSE 알림 경로까지 구현돼 있다.
+> 실제 차량 대신 nuScenes 재생기를 사용하므로 실차량 라이브 관제는 아니다.
 >
 > 데이터 설계는 [`docs/data-design.md`](docs/data-design.md), 전체 설계는
 > [`docs/sdd.md`](docs/sdd.md)를 참고한다.
@@ -26,10 +23,9 @@ make ps      # 상태 확인
 | 서비스 | 포트 | 용도 |
 |---|---|---|
 | kafka1 / kafka2 / kafka3 | 29092 (호스트) | KRaft 3-broker, RF=3 / min.insync.replicas=2 |
-| jobmanager / taskmanager | 8081 | Flink 클러스터 (잡 미배포 — P3) |
+| jobmanager / taskmanager | 8081 | Flink 클러스터 |
 | minio | 9000 / 9001 | S3 호환 오브젝트 스토리지 (GCS 로컬 대체) |
-| iceberg-rest | 8181 | Iceberg REST 카탈로그 |
-| clickhouse | **8124**(HTTP) / 9009(네이티브) | 신호·인지 시계열, 클립 카탈로그 |
+| clickhouse | **8124**(HTTP) / 9009(네이티브) | 신호·객체 메타데이터 시계열, 클립 카탈로그 |
 
 ## 2. 토픽 부트스트랩
 
@@ -37,7 +33,8 @@ make ps      # 상태 확인
 make topics
 ```
 
-RF=3 / `min.insync.replicas=2`로 생성한다. 토픽 이름은 P2 스키마 확정 시 재정의 대상이다.
+`telemetry.records`, `telemetry.dlq`, `fleet.alerts`를 RF=3 / `min.insync.replicas=2`로 생성한다.
+`fleet.alerts`는 저빈도 전이 이벤트의 전체 순서와 SSE 재개를 단순하게 유지하기 위해 1파티션이다.
 
 ## 3. 스모크 테스트
 
@@ -45,11 +42,7 @@ RF=3 / `min.insync.replicas=2`로 생성한다. 토픽 이름은 P2 스키마 �
 make smoke
 ```
 
-전 서비스 healthy · 토픽 존재 · **ClickHouse 질의·지리 함수** · MinIO 버킷 · Iceberg REST를 단언한다.
-
-> Iceberg REST 카탈로그는 **현재 설계에서 쓰지 않는다**(테이블 포맷 보류 —
-> [SDD §1.5](docs/sdd.md)). P6에서 학습셋 버저닝이 필요해질 때를 위해 남겨둔 것이고,
-> 스모크는 컨테이너가 살아 있는지만 확인한다.
+전 서비스 healthy · 토픽 존재 · **ClickHouse 질의·지리 함수** · MinIO 버킷을 단언한다.
 
 ## 4. Kafka HA broker-kill 데모
 
@@ -71,6 +64,31 @@ make ha-demo
 make down     # 볼륨 유지
 make clean    # 볼륨·데이터까지 삭제
 ```
+
+## 5.1 Flink와 실시간 알림 실행
+
+```bash
+make ch-schema
+make flink-test
+make flink-submit
+make api
+```
+
+`make flink-submit`의 `ODD_BOUNDS` 기본값은 fixture에서 확인한 보스턴·싱가포르 지도 범위를
+감싼 사각형이다. 경계 전이 테스트처럼 더 좁은 범위를 쓰려면 실행할 때 덮어쓴다.
+
+```bash
+make flink-submit ODD_BOUNDS='singapore-onenorth=1.2983,1.2987,103.7883,103.7885;boston-seaport=42.3445,42.3518,-71.0507,-71.0341'
+```
+
+대시보드를 실 API에 연결한다.
+
+```bash
+make dashboard
+```
+
+알림 경로는 `Flink → fleet.alerts → Spring API → /api/alerts SSE → React`다.
+`/api/stream`은 ClickHouse의 텔레메트리 재생 전용이라 알림 전달에 사용하지 않는다.
 
 ## 트러블슈팅
 
@@ -106,12 +124,12 @@ npm run dev        # Vite + 목업 SSE 스트림
 픽스처는 라이선스상 커밋하지 않으므로 없으면 생성해야 한다
 ([`frontend/README.md`](frontend/README.md)).
 
-## 다음 단계 — 클라우드 파이프라인
+## 다음 단계
 
-[`docs/data-design.md`](docs/data-design.md) §4 필드 계약 기준으로 아래를 새로 만든다.
+`scripts/verify-realtime.py`, `scripts/verify-steady.py`, `scripts/verify-recovery.py`로
+알림 전달, 고정 유입 처리, TaskManager 복구를 검증할 수 있다. 실행 결과는 로컬의
+`evidence/` 아래에 저장하며 저장소에는 올리지 않는다.
 
-1. 스키마 3종 확정 (`vehicle-signal` / `perception-object` / `segment-ref`) — `event_id`를 빼고 `(vehicle_id, boot_id, seq)`로
-2. **레코드 단위** 재생기 → Kafka (배치는 [뒤집혔다](docs/ingestion-design-review.md) §4.1)
-3. Flink 파이프라인 (`seq` dedup · 검증 · DLQ) → **ClickHouse** 적재
-4. Claim-Check 경로 (MCAP 세그먼트 → 오브젝트 스토리지)
-5. Spring Boot 4 API → 대시보드를 목업에서 실 API로 전환
+각 스크립트에 `--out evidence/<새 실행 이름>`을 지정한다. 알림 시나리오 검증은
+Flink 잡을 `--stop-after-ms 3000 --monitor-stale-ms 2000`으로 제출해야 한다.
+복구 검증은 로컬 `fleet-taskmanager` 컨테이너를 실제 재시작하므로 개발 환경에서만 실행한다.

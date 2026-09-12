@@ -317,7 +317,7 @@ Outbox가 테이블을 쓰는 것은 **트랜잭션에 참여해야 하기 때�
 outbox가 표준 해법이다.** 그리고 **WAL이 그 outbox 역할을 그대로 한다.**
 
 ```
-1. MCAP 업로드 (HTTPS resumable)
+1. MCAP 업로드 (HTTPS multipart)
 2. 성공 시 → segment-ref 를 **WAL에 append**   ← 여기서 durable
 3. 전송기가 WAL에서 읽어 발행
 4. ack 후 커밋 포인터 전진
