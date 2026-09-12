@@ -154,7 +154,7 @@ public class TelemetryQueries {
                 });
     }
 
-    /** 인지 산출을 키프레임 단위로 묶어 준다. 프론트가 박스를 지도에 투영한다. */
+    /** 객체 메타데이터를 키프레임 단위로 묶어 준다. 프론트가 박스를 지도에 투영한다. */
     public List<Map<String, Object>> perceptionBetween(Instant from, Instant to, int limit) {
         List<Map<String, Object>> rows = jdbc.query("""
                 SELECT vehicle_id, sample_id, sensor_time,
@@ -224,7 +224,7 @@ public class TelemetryQueries {
     }
 
     /**
-     * 클립 카탈로그. 중량 경로가 올린 세그먼트를 인지 통계와 함께 보여준다.
+     * 클립 카탈로그. 중량 경로가 올린 세그먼트를 객체 메타데이터 요약과 함께 보여준다.
      *
      * <p>파일 자체는 오브젝트 스토리지에 있고 여기엔 {@code blob_uri} 참조만 있다
      * (Claim-Check, SDD S-1).

@@ -151,7 +151,7 @@ def main() -> int:
         options=[("grpc.ssl_target_name_override", args.server_name)])
     metadata = (("x-vehicle-id", claim), ("x-boot-id", "segment-control"))
 
-    # 제어 평면 스텁. 메타데이터는 인터셉터가 인증서와 대조한다(SDD S-11).
+    # 제어 평면 스텁. 메타데이터는 인터셉터가 인증서와 대조한다(SDD S-9).
     class _Stub:
         def __init__(self, inner):
             self._i = inner

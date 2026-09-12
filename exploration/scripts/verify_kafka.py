@@ -162,9 +162,9 @@ def main() -> int:
     if len(channels) <= 1:
         failures.append("채널이 1종뿐이다 — 결합형(SignalRecord)을 보내고 있다")
 
-    # ── 인지 ────────────────────────────────────────────────────────────
+    # ── 객체 메타데이터 ────────────────────────────────────────────────
     msgs = by_kind.get("RECORD_KIND_PERCEPTION", [])
-    print(f"\n── 인지 {len(msgs):,}건 ──")
+    print(f"\n── 객체 메타데이터 {len(msgs):,}건 ──")
     cats = collections.Counter()
     vis = collections.Counter()
     pseqs = []
@@ -184,7 +184,7 @@ def main() -> int:
 
     print(f"  Avro 디코딩 실패 {decode_fail}건")
     if decode_fail:
-        failures.append(f"인지 Avro 디코딩 실패 {decode_fail}건")
+        failures.append(f"객체 메타데이터 Avro 디코딩 실패 {decode_fail}건")
     if pseqs:
         print(f"  seq {min(pseqs)}~{max(pseqs)}")
         print(f"  카테고리 {len(cats)}종 · 상위: "
@@ -192,9 +192,9 @@ def main() -> int:
         print(f"  LiDAR 0포인트 {lidar_zero:,}/{len(pseqs):,} = "
               f"{lidar_zero/len(pseqs)*100:.1f}%  (데이터 설계 §8.1 기대 23.1%)")
     if args.expect_perception is not None and len(pseqs) != args.expect_perception:
-        failures.append(f"인지 건수 {len(pseqs):,} ≠ 기대 {args.expect_perception:,}")
+        failures.append(f"객체 메타데이터 건수 {len(pseqs):,} ≠ 기대 {args.expect_perception:,}")
 
-    # ── 신호+인지 seq 가 한 시퀀스인지 ──────────────────────────────────
+    # ── 신호+객체 메타데이터 seq가 한 시퀀스인지 ───────────────────────
     allseq = check_gaps(seqs + pseqs)
     print(f"\n═══ 통합 seq ═══  {allseq.get('min')}~{allseq.get('max')} · "
           f"{allseq.get('n'):,}건 · 결번 {allseq.get('missing_n')}건 · "

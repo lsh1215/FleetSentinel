@@ -2,7 +2,7 @@
   "type": "record",
   "name": "VehicleSignal",
   "namespace": "io.fleetsentinel.telemetry",
-  "doc": "① 신호 계층 1건 = 한 채널의 한 샘플(data-design.md §5.1). 채널 네이티브 주기 그대로이며 다운샘플하지 않는다 — ego_pose 시각에 결합하면 zoesensors 943.8Hz가 19.7Hz로 깎여 98.5%가 버려진다(§4.2). vehicle_id·boot_id·seq는 이 레코드에 없다: 전송 봉투가 정본이고 신원은 클라이언트 인증서에서만 나온다(SDD S-11).",
+  "doc": "① 신호 계층 1건 = 한 채널의 한 샘플(data-design.md §5.1). 채널 네이티브 주기 그대로이며 다운샘플하지 않는다 — ego_pose 시각에 결합하면 zoesensors 943.8Hz가 19.7Hz로 깎여 98.5%가 버려진다(§4.2). vehicle_id·boot_id·seq는 이 레코드에 없다: 전송 봉투가 정본이고 신원은 클라이언트 인증서에서만 나온다(SDD S-9).",
   "fields": [
     {"name": "scene_id", "type": "string", "doc": "소속 장면"},
     {

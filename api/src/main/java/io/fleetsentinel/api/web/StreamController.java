@@ -110,7 +110,7 @@ public class StreamController {
             return;
         }
 
-        log.debug("푸시 창 {} ~ {} : 신호 {}건 · 인지 {}건",
+        log.debug("푸시 창 {} ~ {} : 신호 {}건 · 객체 메타데이터 {}건",
                 from, to, signals.size(), perception.size());
 
         // 창이 비었다 = 데이터 공백이다. 장면 사이 간격이 최소 120초이고 다른 날짜면

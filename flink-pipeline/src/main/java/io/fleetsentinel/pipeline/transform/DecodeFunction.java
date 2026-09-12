@@ -20,22 +20,24 @@ import org.apache.flink.util.Collector;
 /**
  * Avro 디코드 → 검증 → 좌표 파생.
  *
- * <p>세 단계를 한 연산자에 둔 이유는 <b>실패 분류가 단계마다 다르기</b> 때문이다.
- * 나누면 각 연산자가 자기 DLQ 경로를 갖게 되고 그게 더 복잡하다.
+ * 세 단계를 한 연산자에 둔 이유는 실패 분류가 단계마다 다르기 때문이다. 나누면 각
+ * 연산자가 자기 DLQ 경로를 갖게 되고 그게 더 복잡하다.
  *
- * <table>
- *   <tr><td>디코드 실패</td><td>{@code PARSE_FAILURE}</td></tr>
- *   <tr><td>필드 누락</td><td>{@code SCHEMA_VALIDATION_FAILURE}</td></tr>
- *   <tr><td>물리적으로 불가능한 값</td><td>{@code BUSINESS_RULE_FAILURE}</td></tr>
- * </table>
+ *   디코드 실패            → PARSE_FAILURE
+ *   필드 누락              → SCHEMA_VALIDATION_FAILURE
+ *   물리적으로 불가능한 값 → BUSINESS_RULE_FAILURE
  *
- * <p><b>좌표 변환 실패는 DLQ가 아니다.</b> `lat`/`lon`을 null로 두고 행은 살린다 —
- * 원본 ENU는 그대로 있으므로 유실이 아니고, 버리면 무손실 원칙을 어긴다.
+ * 좌표 변환 실패만은 DLQ가 아니다. lat/lon 을 null 로 두고 행은 살린다 — 원본 ENU가
+ * 그대로 있어 나중에 다시 파생할 수 있으므로 유실이 아니다.
+ *
+ * ProcessFunction<Envelope, Decoded> — Envelope 을 받아 Decoded 를 내보낸다.
  */
 public class DecodeFunction extends ProcessFunction<Envelope, Decoded> {
 
     private static final long serialVersionUID = 1L;
 
+    // transient = 직렬화에서 뺀다. 워커로 실어 보낼 수 없는 것들이라 워커에 도착한 뒤
+    // open() 에서 만든다.
     private transient AvroDecoder signal;
     private transient AvroDecoder perception;
     private transient AvroDecoder segment;
@@ -43,6 +45,7 @@ public class DecodeFunction extends ProcessFunction<Envelope, Decoded> {
     private transient Counter ruleFailed;
     private transient Counter geoFailed;
 
+    /** 워커에서 이 연산자가 시작될 때 한 번 불린다. 생성자는 제출 쪽에서 도니까 준비는 여기서 한다. */
     @Override
     public void open(OpenContext ctx) {
         signal = AvroDecoder.fromResource("/schemas/vehicle-signal.avsc");
@@ -56,9 +59,13 @@ public class DecodeFunction extends ProcessFunction<Envelope, Decoded> {
         geoFailed = g.counter("geo_failed");
     }
 
+    /**
+     * 레코드 하나마다 불린다. 결과는 return 이 아니라 out.collect 로 내보낸다 —
+     * 하나가 들어와 0개(DLQ행)나 1개가 나가기 때문이다.
+     */
     @Override
     public void processElement(Envelope env, Context ctx, Collector<Decoded> out) {
-        // 토픽이 아니라 **kind 헤더**로 분기한다. 토픽은 하나다(TelemetryPipeline 참조).
+        // 토픽이 아니라 kind 헤더로 분기한다. 토픽은 하나다(TelemetryPipeline 참조).
         String kind = env.kind();
         if (kind == null) {
             dlq(ctx, env, ErrorClass.SCHEMA_VALIDATION_FAILURE, "route", "kind 헤더가 없다");
@@ -75,10 +82,12 @@ public class DecodeFunction extends ProcessFunction<Envelope, Decoded> {
 
     private void handleSignal(Envelope env, Context ctx, Collector<Decoded> out) {
         GenericRecord r = decode(signal, env, ctx);
+        // null = 이미 DLQ로 보낸 뒤다.
         if (r == null) {
             return;
         }
         Optional<String> bad = Rules.checkSignal(r);
+        // 사유가 들어 있으면 검증 실패다.
         if (bad.isPresent()) {
             ruleFailed.inc();
             dlq(ctx, env, ErrorClass.BUSINESS_RULE_FAILURE, "validate-signal", bad.get());
@@ -97,19 +106,21 @@ public class DecodeFunction extends ProcessFunction<Envelope, Decoded> {
     }
 
     /**
-     * `ego_pose` 채널의 `translation` + `location` 으로 위경도를 만든다.
+     * ego_pose 채널의 translation + location 으로 위경도를 만든다.
      *
-     * @return 실패하면 null. <b>행은 버리지 않는다</b> — ENU 원본이 남아 있으므로
-     *         나중에 다시 파생할 수 있고, 버리면 유실이다
+     * @return [위도, 경도]. 실패하면 null이며 행은 버리지 않는다 — ENU 원본이 남아
+     *         있으므로 나중에 다시 파생할 수 있고, 버리면 유실이다
      */
     private double[] deriveFromEgoPose(GenericRecord r) {
         Object ch = r.get("channel");
         if (ch == null || !"ego_pose".equals(ch.toString())) {
             return null;
         }
+        // 좌표 하나 때문에 잡이 죽으면 안 된다. 아래 catch 가 안전망이다.
         try {
             Object vecs = r.get("values_vec");
             Object strs = r.get("values_str");
+            // 둘 다 Map 이어야 vm·sm 으로 받아 쓸 수 있다. 아니면 좌표를 못 만든다.
             if (!(vecs instanceof Map<?, ?> vm) || !(strs instanceof Map<?, ?> sm)) {
                 return null;
             }
@@ -118,6 +129,7 @@ public class DecodeFunction extends ProcessFunction<Envelope, Decoded> {
             if (t == null || t.size() < 2 || loc == null) {
                 return null;
             }
+            // translation 은 [x, y, z]. 앞의 둘만 쓰고 높이는 버린다.
             double x = ((Number) t.get(0)).doubleValue();
             double y = ((Number) t.get(1)).doubleValue();
             return Enu.toWgs84(x, y, loc.toString());
@@ -157,6 +169,7 @@ public class DecodeFunction extends ProcessFunction<Envelope, Decoded> {
         out.collect(Decoded.segment(env, r));
     }
 
+    /** 디코드에 성공하면 레코드를, 실패하면 DLQ로 보낸 뒤 null 을 준다. */
     private GenericRecord decode(AvroDecoder dec, Envelope env, Context ctx) {
         try {
             return dec.decode(env.payload());
@@ -167,11 +180,12 @@ public class DecodeFunction extends ProcessFunction<Envelope, Decoded> {
         }
     }
 
+    /** 불량 레코드를 곁가지 출력으로 보낸다. 본류(out.collect)와 타입이 달라 태그로 구분한다. */
     private void dlq(Context ctx, Envelope env, ErrorClass cls, String step, String detail) {
         ctx.output(TelemetryPipeline.DLQ, DlqRecord.of(env, cls, step, detail));
     }
 
-    /** Avro 맵 키는 {@code Utf8} 이라 문자열로 직접 조회하면 안 맞는다. */
+    /** Avro 맵의 키는 String 이 아니라 Utf8 이라 map.get("translation") 으로는 못 찾는다. */
     private static Object lookup(Map<?, ?> map, String name) {
         for (Map.Entry<?, ?> e : map.entrySet()) {
             if (name.equals(e.getKey().toString())) {

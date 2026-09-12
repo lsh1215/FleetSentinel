@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""신호·인지 → WAL → gRPC 게이트웨이 → Kafka 종단 재생기.
+"""신호·객체 메타데이터 → WAL → gRPC 게이트웨이 → Kafka 종단 재생기.
 
 지금까지 `LoopbackGateway`가 인프로세스로 대신하던 경로를 실제 네트워크로 돌린다.
 바뀌는 것은 전송 계층뿐이다 — WAL·ack·dedup 계약은 그대로다.
 
     ┌──────────────┐   Avro    ┌─────┐   gRPC(mTLS)   ┌──────────┐  acks=all  ┌───────┐
     │ nuScenes     │──────────▶│ WAL │───────────────▶│ 게이트웨이 │───────────▶│ Kafka │
-    │ 신호·인지     │           │ seq │◀── CACK ───────│ stateless │            └───────┘
+    │ 신호·객체 메타데이터 │     │ seq │◀── CACK ───────│ stateless │            └───────┘
     └──────────────┘           └─────┘   커밋 전진      └──────────┘
 
 사용:
@@ -76,7 +76,7 @@ def _signal_row(sig) -> dict:
     그러면 하류(Flink·ClickHouse)가 매 값마다 타입 분기를 해야 한다.
 
     `vehicle_id`가 없는 것은 의도적이다 — 신원은 전송 봉투(인증서 → Kafka 키)가 정본이고,
-    본문에 두 벌을 두면 하류가 어느 쪽을 믿느냐에 따라 구멍이 열린다(SDD S-11).
+    본문에 두 벌을 두면 하류가 어느 쪽을 믿느냐에 따라 구멍이 열린다(SDD S-9).
     """
     num: dict = {}
     vec: dict = {}
@@ -160,7 +160,7 @@ def main() -> int:
     signals: List[Any] = []
     perception: List[Any] = []
     for scene in nusc.scene[: args.scenes]:
-        # 신호는 채널 네이티브(무손실). 인지는 extract_scene 이 정본이다.
+        # 신호는 채널 네이티브(무손실). 객체 메타데이터는 extract_scene이 정본이다.
         signals.extend(extract_native_signals(nusc, scene, vehicle_id=args.vehicle,
                                               can_api=can))
         extract = extract_scene(nusc, scene, vehicle_id=args.vehicle,
@@ -190,7 +190,7 @@ def main() -> int:
                    kind=KIND_PERCEPTION)
     total_records = len(signals) + len(perception)
     t_wal = time.monotonic() - t0
-    print(f"WAL 적재: 신호 {len(signals):,} · 인지 {len(perception):,} "
+    print(f"WAL 적재: 신호 {len(signals):,} · 객체 메타데이터 {len(perception):,} "
           f"= {total_records:,}건 ({total_records / max(t_wal, 1e-9):,.0f} rec/s)")
 
     if total_records == 0:

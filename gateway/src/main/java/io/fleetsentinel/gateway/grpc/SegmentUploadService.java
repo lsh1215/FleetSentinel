@@ -40,7 +40,7 @@ import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignReque
  *
  * <p><b>stateless를 유지한다.</b> 어느 파트까지 올렸는지는 차량과 스토리지가 알고 있고,
  * 게이트웨이는 물어보면 URL을 새로 서명해줄 뿐이다. 경량 경로에서 재개 지점을 차량이 정한
- * 것과 같은 원칙이다(SDD S-11).
+ * 것과 같은 원칙이다(SDD S-9).
  */
 @GrpcService
 public class SegmentUploadService

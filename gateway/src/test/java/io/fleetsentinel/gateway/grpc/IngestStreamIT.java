@@ -93,7 +93,7 @@ class IngestStreamIT {
     // ── 정상 경로 ────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("신호·인지 레코드가 Kafka에 실리고 CACK이 돌아온다")
+    @DisplayName("신호·객체 메타데이터 레코드가 Kafka에 실리고 CACK이 돌아온다")
     void publishesAndAcks() throws Exception {
         var stub = stubFor("vehicle-0001", "vehicle-0001", "01JBOOTA");
 
@@ -210,7 +210,7 @@ class IngestStreamIT {
     void rejectsImpersonation() {
         // 인증서는 완벽히 유효하다. CA가 서명했고 만료되지 않았다.
         // 막히는 이유는 오직 신원이 일치하지 않기 때문이다 — 이것이 mTLS만으로는
-        // 닫히지 않는 층이다(SDD S-11).
+        // 닫히지 않는 층이다(SDD S-9).
         var stub = stubFor("vehicle-0001", "vehicle-0002", "01JBOOTC");
 
         var status = expectFailure(stub);

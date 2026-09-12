@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@code exploration/tests/test_dedup.py}의 케이스를 옮긴 것이다.
- * 두 구현이 같은 판정을 내려야 재생기에서 검증한 결과가 Flink에도 적용된다.
+ * 차량 쪽 test_dedup.py 의 케이스를 옮긴 것이다.
+ * 두 구현이 같은 판정을 내야 재생기에서 검증한 결과를 Flink 에도 적용할 수 있다.
  */
 class SeqWindowTest {
 

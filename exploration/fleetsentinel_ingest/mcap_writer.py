@@ -6,7 +6,7 @@ MCAP을 고른 이유는 docs/data-design.md §9.1에 있다: 이종 타임스�
 
 채널 구성:
   /vehicle/signal          jsonschema  ① 신호 (경량 — Kafka로도 흐른다)
-  /perception/objects      jsonschema  ② 인지 산출 (경량)
+  /perception/objects      jsonschema  ② 객체 메타데이터 (경량)
   /camera/CAM_*            jpeg        ③ 원시 (중량 — Claim-Check 대상)
   /lidar/LIDAR_TOP         pcd-bin     ③ 원시
   /radar/RADAR_*           pcd         ③ 원시
@@ -59,7 +59,7 @@ SIGNAL_SCHEMA: Dict[str, Any] = {
 PERCEPTION_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "title": "PerceptionObjects",
-    "description": "FleetSentinel ② 인지 산출 — 키프레임 1건의 3D 박스 배열 (§4.2)",
+    "description": "FleetSentinel ② 객체 메타데이터 — 키프레임 1건의 3D 박스 배열 (§4.2)",
     "properties": {
         "sample_id": {"type": "string"},
         "sensor_time": {"type": "integer"},
@@ -73,7 +73,7 @@ CALIBRATION_SCHEMA: Dict[str, Any] = {
     "title": "SensorCalibration",
     "description": (
         "센서 외부/내부 파라미터. MCAP만으로 3D 재생이 성립하려면 반드시 있어야 한다 — "
-        "LiDAR/레이더는 센서 프레임, 인지 3D 박스는 글로벌 프레임이라 이 변환 없이는 정렬되지 않는다."
+        "LiDAR/레이더는 센서 프레임, 객체 3D 박스는 글로벌 프레임이라 이 변환 없이는 정렬되지 않는다."
     ),
     "properties": {
         "channel": {"type": "string"},
@@ -171,7 +171,7 @@ def write_scene_mcap(
                 data=json.dumps(dataclasses.asdict(sig)).encode(),
             )
 
-        # ② 인지 산출 — 키프레임 단위로 묶는다
+        # ② 객체 메타데이터 — 키프레임 단위로 묶는다
         by_sample: Dict[str, List[Dict[str, Any]]] = {}
         sample_time: Dict[str, int] = {}
         for obj in extract.perception:

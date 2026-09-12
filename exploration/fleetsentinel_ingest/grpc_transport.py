@@ -7,7 +7,7 @@
 ## mTLS와 신원
 
 게이트웨이는 클라이언트 인증서를 **요구**하고, `vehicle_id`를 인증서 SAN URI에서만
-취한다([SDD](../../docs/sdd.md) S-11). 그래서 여기서 `vehicle_id`를 "설정"하는 것은
+취한다([SDD](../../docs/sdd.md) S-9). 그래서 여기서 `vehicle_id`를 "설정"하는 것은
 사실상 **어느 인증서를 쓸지 고르는 것**이다. 메타데이터로 보내는 `x-vehicle-id`는 주장일
 뿐이고, 인증서와 다르면 게이트웨이가 `PERMISSION_DENIED`로 끊는다.
 
@@ -41,7 +41,7 @@ __all__ = [
     "load_credentials",
 ]
 
-#: WAL의 kind 바이트. `wal.py`가 0·1만 정의하므로 인지 계층을 여기서 넓힌다.
+#: WAL의 kind 바이트. `wal.py`가 0·1만 정의하므로 객체 메타데이터 계층을 여기서 넓힌다.
 #: 온디스크 포맷은 검증된 계약이라(wal-design.md §2) 기존 값을 바꾸지 않는다.
 KIND_PERCEPTION = 2
 

@@ -2,7 +2,7 @@
   "type": "record",
   "name": "SegmentRef",
   "namespace": "io.fleetsentinel.telemetry",
-  "doc": "③ 원시 로그 참조 1건(data-design.md §5.3). 세그먼트 파일 자체가 아니라 **그것을 가리키는 보관증**이다 — 파일은 298~341 MiB로 오브젝트 스토리지에 있고 이 레코드는 2 KiB 미만으로 버스를 탄다(Claim-Check, SDD S-1). vehicle_id·boot_id·seq는 전송 봉투가 정본이라 여기 없다(SDD S-11).",
+  "doc": "③ 원시 로그 참조 1건(data-design.md §5.3). 세그먼트 파일 자체가 아니라 **그것을 가리키는 보관증**이다 — 파일은 298~341 MiB로 오브젝트 스토리지에 있고 이 레코드는 2 KiB 미만으로 버스를 탄다(Claim-Check, SDD S-1). vehicle_id·boot_id·seq는 전송 봉투가 정본이라 여기 없다(SDD S-9).",
   "fields": [
     {
       "name": "segment_id",

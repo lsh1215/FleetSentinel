@@ -29,7 +29,7 @@ class IngestStub:
     """차량 → 수집 게이트웨이 업링크.
 
     신원은 이 메시지에 없다. `vehicle_id`는 클라이언트 인증서 SAN URI에서만 나오고
-    (SDD S-11), 차량이 메타데이터 `x-vehicle-id`로 보낸 값은 대조용 "주장"일 뿐이다.
+    (SDD S-9), 차량이 메타데이터 `x-vehicle-id`로 보낸 값은 대조용 "주장"일 뿐이다.
     불일치하면 PERMISSION_DENIED로 스트림이 끊긴다.
     """
 
@@ -50,7 +50,7 @@ class IngestServicer:
     """차량 → 수집 게이트웨이 업링크.
 
     신원은 이 메시지에 없다. `vehicle_id`는 클라이언트 인증서 SAN URI에서만 나오고
-    (SDD S-11), 차량이 메타데이터 `x-vehicle-id`로 보낸 값은 대조용 "주장"일 뿐이다.
+    (SDD S-9), 차량이 메타데이터 `x-vehicle-id`로 보낸 값은 대조용 "주장"일 뿐이다.
     불일치하면 PERMISSION_DENIED로 스트림이 끊긴다.
     """
 
@@ -85,7 +85,7 @@ class Ingest:
     """차량 → 수집 게이트웨이 업링크.
 
     신원은 이 메시지에 없다. `vehicle_id`는 클라이언트 인증서 SAN URI에서만 나오고
-    (SDD S-11), 차량이 메타데이터 `x-vehicle-id`로 보낸 값은 대조용 "주장"일 뿐이다.
+    (SDD S-9), 차량이 메타데이터 `x-vehicle-id`로 보낸 값은 대조용 "주장"일 뿐이다.
     불일치하면 PERMISSION_DENIED로 스트림이 끊긴다.
     """
 

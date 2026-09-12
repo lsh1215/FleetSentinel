@@ -13,10 +13,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Python {@code geo.py}와 Java {@code Enu}가 같은 좌표를 내는지 확인한다.
+ * Python geo.py 와 Java Enu 가 같은 좌표를 내는지 대조한다.
  *
- * <p>이 변환이 틀리면 지도가 <b>조용히</b> 엉뚱한 곳을 가리킨다 — 예외도 안 나고 값도
- * 그럴듯해서 눈으로는 못 잡는다. 그래서 Python 결과를 픽스처로 굳혀 대조한다.
+ * 이 변환이 틀리면 지도가 조용히 엉뚱한 곳을 가리킨다 — 예외도 안 나고 값도 그럴듯해서
+ * 눈으로는 못 잡는다. 그래서 Python 결과를 픽스처로 굳혀 두고 대조한다.
  */
 class EnuParityTest {
 
@@ -46,7 +46,7 @@ class EnuParityTest {
     @Test
     @DisplayName("왕복 변환이 밀리미터 안에서 닫힌다")
     void roundTrip() {
-        // Python 계약({@code test_geo.py})과 같은 점·같은 임계값을 쓴다.
+        // Python 쪽 test_geo.py 와 같은 점·같은 임계값을 쓴다.
         for (String loc : List.of("boston-seaport", "singapore-onenorth",
                 "singapore-queenstown", "singapore-hollandvillage")) {
             for (double[] p : new double[][]{{0, 0}, {500, 1200}, {1935.3, 870.2}, {-30, 42.5}}) {

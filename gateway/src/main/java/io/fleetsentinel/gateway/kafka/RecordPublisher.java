@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  *
  * <h2>파티션 키</h2>
  *
- * <p>키는 <b>인증서에서 나온</b> {@code vehicleId}다(SDD S-11). 페이로드에서 읽지 않는다.
+ * <p>키는 <b>인증서에서 나온</b> {@code vehicleId}다(SDD S-9). 페이로드에서 읽지 않는다.
  * 그리고 한 차량이 여러 파티션에 걸치면 CACK의 전제가 깨진다 —
  * "연속으로 성공한 최고 seq 이하는 전부 안전하다"가 파티션별 콜백 순서에 기대기 때문이다
  * (ack·dedup 설계 A-L5).

@@ -121,7 +121,7 @@ def main() -> int:
             )
         per_vehicle_batches[vid] = batches
 
-        # 인지 산출 — 키프레임 단위 요약 + 상위 클래스
+        # 객체 메타데이터 — 키프레임 단위 요약 + 상위 클래스
         by_sample: dict[str, list] = defaultdict(list)
         for o in extract.perception:
             by_sample[o.sample_id].append(o)

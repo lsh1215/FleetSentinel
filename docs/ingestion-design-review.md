@@ -94,8 +94,8 @@ MQTT는 PUBLISH 하나 = 페이로드 하나이고 **프로토콜 수준 배치�
 | 경로 | 발생률 | 프로토콜 | 배치 |
 |---|---|---|---|
 | ① 신호 | **1,295 rec/s** | **Kafka 프로듀서 직접** | 전송 계층 (`linger.ms`) |
-| ② 인지 산출 | 2.1 msg/s | 같이 | — |
-| ③ 원시 센서 | 클립당 1건 | HTTPS resumable | — |
+| ② 객체 메타데이터 | 2.1 msg/s | 같이 | — |
+| ③ 원시 센서 | 클립당 1건 | HTTPS multipart(S3 호환) | — |
 | `segment-ref` · 차량 상태 · heartbeat · (장래) 명령 | 저주파 | **MQTT** | — |
 
 **MQTT는 저주파 채널만 담당한다.** 그게 원래 설계 의도에 맞는 용도이고, LWT로 차량 오프라인을
@@ -371,11 +371,11 @@ B의 그 1개가 실질적이다 — **gRPC 스트림에는 메시지별 ack가 
 차량
  │
  ├─ ① 신호 1,295 rec/s ──┐
- ├─ ② 인지    2.1 msg/s ──┴─[WAL]─[gRPC 스트림, mTLS]──▶ 게이트웨이(stateless) ──▶ Kafka
+ ├─ ② 객체 메타데이터  2.1 msg/s ──┴─[WAL]─[gRPC 스트림, mTLS]──▶ 게이트웨이(stateless) ──▶ Kafka
  │                              레코드 단위 계약 · seq        Kafka 프로듀서 linger.ms
  │                              서버가 최고 수신 seq 반환      ack 후 WAL 커밋 전진
  │
- ├─ ③ 원시   27.15 MB/s ────[HTTPS resumable]──────────▶ 오브젝트 스토리지 (MCAP)
+ ├─ ③ 원시   27.15 MB/s ────[HTTPS multipart]──────────▶ 오브젝트 스토리지 (MCAP)
  │                                                            │ 업로드 완료 후
  └─ segment-ref · 상태 · heartbeat ─[MQTT 5.0, QoS1]─▶ 브로커 ─┴─▶ 브리지 ──▶ Kafka
                                      LWT 오프라인 검출
@@ -385,10 +385,10 @@ B의 그 1개가 실질적이다 — **gRPC 스트림에는 메시지별 ack가 
 
 | | 이전 | 수정 |
 |---|---|---|
-| 신호·인지 전송 | MQTT + 100ms 애플리케이션 배치 | **gRPC 스트림**, 전송 계층 배치 |
+| 신호·객체 메타데이터 전송 | MQTT + 100ms 애플리케이션 배치 | **gRPC 스트림**, 전송 계층 배치 |
 | 데이터 계약 | 배치 (`SignalBatch`) | **레코드 단위** |
 | dedup 단위 | 배치 | **레코드** (`(vehicle_id, boot_id, seq)` — [후속 설계](ack-dedup-design.md)) |
-| MQTT 역할 | 신호·인지 전 구간 | **저주파 채널만** (LWT 유지) |
+| MQTT 역할 | 신호·객체 메타데이터 전 구간 | **저주파 채널만** (LWT 유지) |
 | 유실 탐지 | 없음 | **`seq` 결번 검출** |
 | durability | 없음 | **WAL** (온보드, 미구현 — §4.8.6) |
 | 확장 단위 | 브로커 클러스터 | **stateless 게이트웨이** |
