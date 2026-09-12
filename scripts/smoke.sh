@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FleetSentinel — G001 스모크 테스트 (수용 기준).
-# 전 서비스 healthy + 토픽 존재 + ClickHouse 질의 + MinIO 버킷 + Iceberg REST + Flink.
+# 전 서비스 healthy + 토픽 존재 + ClickHouse 질의 + MinIO 버킷 + Flink.
 # compose up 이전에는 실패(빨간불), up 이후 통과(초록불)해야 한다. TDD 게이트.
 set -uo pipefail
 
@@ -10,7 +10,7 @@ ok()   { printf '  \033[32mPASS\033[0m %s\n' "$1"; }
 bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; FAIL=1; }
 
 echo "== 1. container health =="
-for svc in kafka1 kafka2 kafka3 minio iceberg-rest jobmanager taskmanager clickhouse; do
+for svc in kafka1 kafka2 kafka3 minio jobmanager taskmanager clickhouse; do
   cid=$($COMPOSE ps -q "$svc" 2>/dev/null)
   if [ -z "$cid" ]; then bad "$svc not running"; continue; fi
   health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null)
@@ -24,7 +24,7 @@ echo "== 2. kafka topics (RF=3) =="
 topics=$($COMPOSE exec -T kafka1 sh -c "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list" 2>/dev/null || true)
 # create-topics.sh가 만드는 것과 같아야 한다. 어긋나면 스모크가 지키려던
 # RF=3 / min.insync.replicas=2(ADR-009) 단언이 조용히 사라진다.
-for t in telemetry.records telemetry.dlq; do
+for t in telemetry.records telemetry.dlq fleet.alerts; do
   if echo "$topics" | grep -qx "$t"; then
     desc=$($COMPOSE exec -T kafka1 sh -c "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic $t" 2>/dev/null)
     rf=$(echo "$desc" | grep -o 'ReplicationFactor: [0-9]*' | head -1 | awk '{print $2}')
@@ -47,14 +47,11 @@ ch_geo=$(curl -sf "$CH" --data "SELECT pointInPolygon((1.5,1.5),[(0.,0.),(3.,0.)
 
 echo "== 5. minio buckets =="
 buckets=$($COMPOSE exec -T minio sh -c "mc alias set l http://localhost:9000 admin password >/dev/null 2>&1; mc ls l 2>/dev/null" || true)
-for b in warehouse checkpoints; do
+for b in checkpoints fleet-raw; do
   echo "$buckets" | grep -q "$b" && ok "bucket $b" || bad "bucket $b missing"
 done
 
-echo "== 6. iceberg REST catalog =="
-curl -sf "http://localhost:8181/v1/config?warehouse=s3://warehouse/" >/dev/null 2>&1 && ok "iceberg-rest /v1/config" || bad "iceberg-rest unreachable"
-
-echo "== 7. flink jobmanager =="
+echo "== 6. flink jobmanager =="
 ov=$(curl -sf "http://localhost:8081/overview" 2>/dev/null)
 [ -n "$ov" ] && ok "flink REST /overview" || bad "flink JM unreachable"
 tm=$(echo "$ov" | grep -o '"taskmanagers":[0-9]*' | head -1 | cut -d: -f2)

@@ -88,7 +88,6 @@ spec:
               until mc alias set local http://minio:9000 "$AK" "$SK" >/dev/null 2>&1; do
                 echo "minio 대기..."; sleep 5
               done
-              mc mb --ignore-existing local/warehouse
               mc mb --ignore-existing local/checkpoints
               mc mb --ignore-existing local/fleet-raw
               mc ls local
