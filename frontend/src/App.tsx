@@ -19,6 +19,7 @@ interface VehicleMeta {
 
 export default function App() {
   const [status, setStatus] = useState<StreamStatus>("connecting");
+  const [alertStatus, setAlertStatus] = useState<StreamStatus>("connecting");
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<"map" | "sensor">("map");
   const [reloadKey, setReloadKey] = useState(0);
@@ -44,6 +45,19 @@ export default function App() {
       })
       .catch(() => {});
     return () => ctrl.abort();
+  }, []);
+
+  useEffect(() => {
+    const client = new SseClient({
+      url: "/api/alerts",
+      onStatus: setAlertStatus,
+      pauseWhenHidden: true,
+      handlers: {
+        alert: (data) => telemetryStore.ingestAlert(data as never),
+      },
+    });
+    client.start();
+    return () => client.stop();
   }, []);
 
   // SSE 연결. 핸들러는 저장소에 쓰기만 하고 setState를 호출하지 않는다 —
@@ -85,7 +99,8 @@ export default function App() {
               {selectedMeta.scene_name} · {selectedMeta.location}
             </span>
           )}
-          <span className={`badge s-${status}`}>{status}</span>
+          <span className={`badge s-${status}`}>telemetry {status}</span>
+          <span className={`badge s-${alertStatus}`}>alerts {alertStatus}</span>
         </div>
       </header>
 
@@ -108,14 +123,14 @@ export default function App() {
               <>
                 <label
                   className="toggle vt-reload"
-                  title="선택 차량이 인지한 객체를 지도에 투영한다 (줌 14 이상)"
+                  title="선택 차량의 객체 메타데이터를 지도에 투영한다 (줌 14 이상)"
                 >
                   <input
                     type="checkbox"
                     checked={showObjects}
                     onChange={(e) => setShowObjects(e.target.checked)}
                   />
-                  인지 객체
+                  객체 메타데이터
                 </label>
                 <label className="toggle" title="선택 차량을 화면 중앙에 유지한다">
                   <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
@@ -143,7 +158,7 @@ export default function App() {
               {selectedMeta && <p className="map-note">{selectedMeta.description}</p>}
               {showObjects && (
                 <div className="legend">
-                  <span className="lg-t">인지 객체</span>
+                  <span className="lg-t">객체 메타데이터</span>
                   <span className="lg"><i style={{ background: "#e0b341" }} />보행자·이륜</span>
                   <span className="lg"><i style={{ background: "#6f9fd8" }} />차량</span>
                   <span className="lg"><i style={{ background: "#6b7480" }} />정적</span>

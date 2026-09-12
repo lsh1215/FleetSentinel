@@ -33,9 +33,12 @@ export function VehicleList({
             >
               <span className="dot" />
               <span className="vid">{v.vehicleId}</span>
-              <span className="vspeed">{(v.speedMps * 3.6).toFixed(0)}<i>km/h</i></span>
+              <span className="vspeed">{v.activeAlerts.has("stale") ? "—" : (v.speedMps * 3.6).toFixed(0)}<i>km/h</i></span>
               <span className="vobj">{v.objectCount}<i>obj</i></span>
               <span className="vloc">{v.location.replace("singapore-", "sg-").replace("boston-", "bos-")}</span>
+              {v.activeAlerts.has("stale") && <span>상태 확인 필요</span>}
+              {v.activeAlerts.has("sensor") && <span>센서 오류</span>}
+              {v.activeAlerts.has("stop") && <span>비계획 정지</span>}
             </button>
           </li>
         ))}

@@ -15,9 +15,29 @@ const OVERSCAN = 4;
 const KIND_META: Record<FleetEvent["kind"], { label: string; cls: string }> = {
   harsh_brake: { label: "급제동", cls: "ev-harsh" },
   sensor_dropout: { label: "센서결손", cls: "ev-drop" },
-  low_confidence: { label: "저신뢰라벨", cls: "ev-low" },
+  odd_exit: { label: "ODD 이탈", cls: "ev-odd" },
+  odd_sustained: { label: "ODD 지속", cls: "ev-critical" },
+  odd_return: { label: "ODD 복귀", cls: "ev-recovered" },
+  unplanned_stop: { label: "비계획 정지", cls: "ev-critical" },
+  stop_cleared: { label: "정지 판정 종료", cls: "ev-recovered" },
+  sensor_fault: { label: "센서 오류", cls: "ev-critical" },
+  sensor_recovered: { label: "센서 복귀", cls: "ev-recovered" },
+  telemetry_stale: { label: "정보 미수신", cls: "ev-critical" },
+  telemetry_recovered: { label: "수신 재개", cls: "ev-recovered" },
   epoch: { label: "재생루프", cls: "ev-epoch" },
 };
+
+function displayTime(value: number): string {
+  if (value > 1_000_000_000_000) {
+    return new Intl.DateTimeFormat("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(value);
+  }
+  return `${(value / 1000).toFixed(1)}s`;
+}
 
 export function EventFeed({ onSelect }: { onSelect: (id: string) => void }) {
   useSyncExternalStore(telemetryStore.subscribe, telemetryStore.getSnapshot);
@@ -64,7 +84,7 @@ export function EventFeed({ onSelect }: { onSelect: (id: string) => void }) {
                 <span className="feed-body">
                   <b>{ev.vehicleId}</b> {ev.detail}
                 </span>
-                <span className="feed-t">{(ev.t / 1000).toFixed(1)}s</span>
+                <span className="feed-t">{displayTime(ev.t)}</span>
               </button>
             );
           })}

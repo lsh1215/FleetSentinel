@@ -31,7 +31,16 @@ const EVENT_CAPACITY = 300;
 /** 급제동 임계. |accel| > 3.0 m/s^2 (0.3g 관례를 보수적으로 반올림) — docs/data-design.md */
 const HARSH_ACCEL_MPS2 = 3.0;
 
-export type FleetEventKind = "harsh_brake" | "sensor_dropout" | "low_confidence" | "epoch";
+export type FleetEventKind =
+  | "harsh_brake"
+  | "sensor_dropout"
+  | "odd_exit"
+  | "odd_sustained"
+  | "odd_return"
+  | "unplanned_stop" | "stop_cleared"
+  | "sensor_fault" | "sensor_recovered"
+  | "telemetry_stale" | "telemetry_recovered"
+  | "epoch";
 
 export interface FleetEvent {
   readonly id: string;
@@ -41,7 +50,7 @@ export interface FleetEvent {
   readonly detail: string;
 }
 
-/** 인지된 객체 하나의 평면 발자국 — 지도 투영용. */
+/** 객체 메타데이터 하나의 평면 발자국. 지도 투영용이다. */
 export interface PerceivedObject {
   readonly category: string;
   /** ENU 글로벌 미터 */
@@ -50,7 +59,7 @@ export interface PerceivedObject {
   readonly width: number;
   readonly length: number;
   readonly yaw: number;
-  /** 박스 내 LiDAR 포인트 수. 0이면 미관측 = 저신뢰(§7.1) */
+  /** 박스 내 LiDAR 포인트 수. 0은 거리나 가림 때문에 정상적으로 발생할 수 있다. */
   readonly lidarPts: number;
   readonly visibility: string;
 }
@@ -66,16 +75,18 @@ export interface VehicleState {
   speedMps: number;
   steeringRad: number;
   yawRate: number;
-  /** 최근 인지 프레임 요약 */
+  /** 최근 객체 메타데이터 프레임 요약 */
   objectCount: number;
   zeroLidarCount: number;
   classes: Record<string, number>;
-  /** 최신 키프레임의 인지 객체. 지도 투영에 쓴다. */
+  /** 최신 키프레임의 객체 메타데이터. 지도 투영에 쓴다. */
   objects: PerceivedObject[];
   /** 마지막 신호의 재생 시각(ms) */
   lastT: number;
   /** 이 차량이 지금까지 받은 레코드 수 — 처리량 표시용 */
   recordCount: number;
+  /** Flink의 전이 이벤트로 열고 닫는 현재 경보 상태. */
+  activeAlerts: Set<"odd" | "stop" | "sensor" | "stale">;
   series: {
     speed: RingBuffer;
     steering: RingBuffer;
@@ -91,7 +102,7 @@ interface SignalBatch {
   records: { e: string; c: string; t: number; v: Record<string, unknown> }[];
 }
 
-/** SSE로 오는 인지 산출 이벤트(키프레임 1건). */
+/** SSE로 오는 객체 메타데이터 이벤트(키프레임 1건). */
 interface PerceptionEvent {
   vehicle_id: string;
   location: string;
@@ -113,11 +124,28 @@ interface PerceptionEvent {
   }[];
 }
 
+export interface AlertEvent {
+  eventId: string;
+  type:
+    | "ODD_EXITED"
+    | "ODD_SUSTAINED"
+    | "ODD_RETURNED"
+    | "UNPLANNED_STOP" | "STOP_CLEARED"
+    | "SENSOR_FAULT" | "SENSOR_RECOVERED"
+    | "TELEMETRY_STALE" | "TELEMETRY_RECOVERED";
+  severity: "INFO" | "WARNING" | "CRITICAL";
+  vehicleId: string;
+  eventTimeMs: number;
+  detectedAtMs: number;
+  message: string;
+}
+
 const TRAIL_MAX = 400;
 
-class TelemetryStore {
+export class TelemetryStore {
   private readonly vehicles = new Map<string, VehicleState>();
   private readonly events: FleetEvent[] = [];
+  private readonly eventIds = new Set<string>();
   private listeners = new Set<() => void>();
 
   /** 저빈도 구독자에게 알릴 때 쓰는 스냅샷 버전. 값 자체는 의미 없다. */
@@ -152,6 +180,7 @@ class TelemetryStore {
         objects: [],
         lastT: 0,
         recordCount: 0,
+        activeAlerts: new Set(),
         series: {
           speed: new RingBuffer(SERIES_CAPACITY),
           steering: new RingBuffer(SERIES_CAPACITY),
@@ -249,7 +278,7 @@ class TelemetryStore {
     v.objectCount = p.n_objects;
     v.zeroLidarCount = p.n_zero_lidar;
     v.classes = p.classes;
-    // 인지 결과는 키프레임(2Hz)마다 통째로 교체된다 — 누적하지 않는다.
+    // 객체 메타데이터는 키프레임(2Hz)마다 통째로 교체된다 — 누적하지 않는다.
     // 객체는 사라지고 나타나므로 이전 프레임을 남기면 유령이 쌓인다.
     v.objects = (p.boxes ?? []).map((b) => ({
       category: b.cat,
@@ -261,15 +290,50 @@ class TelemetryStore {
       lidarPts: b.lp,
       visibility: b.vis,
     }));
-    if (p.n_zero_lidar > 0) {
-      this.pushEvent({
-        id: `${p.vehicle_id}-${p.t}-lc`,
-        t: p.t,
-        vehicleId: p.vehicle_id,
-        kind: "low_confidence",
-        detail: `LiDAR 미관측 라벨 ${p.n_zero_lidar}/${p.n_objects}`,
-      });
+    this.scheduleNotify();
+  }
+
+  ingestAlert(alert: AlertEvent): void {
+    if (this.eventIds.has(alert.eventId)) return;
+    const vehicle = this.ensureVehicle(alert.vehicleId);
+    let kind: FleetEventKind;
+    const detail = alert.message;
+
+    switch (alert.type) {
+      case "ODD_EXITED":
+        vehicle.activeAlerts.add("odd");
+        kind = "odd_exit";
+        break;
+      case "ODD_SUSTAINED":
+        vehicle.activeAlerts.add("odd");
+        kind = "odd_sustained";
+        break;
+      case "ODD_RETURNED":
+        vehicle.activeAlerts.delete("odd");
+        kind = "odd_return";
+        break;
+      case "UNPLANNED_STOP":
+        vehicle.activeAlerts.add("stop"); kind = "unplanned_stop"; break;
+      case "STOP_CLEARED":
+        vehicle.activeAlerts.delete("stop"); kind = "stop_cleared"; break;
+      case "SENSOR_FAULT":
+        vehicle.activeAlerts.add("sensor"); kind = "sensor_fault"; break;
+      case "SENSOR_RECOVERED":
+        vehicle.activeAlerts.delete("sensor"); kind = "sensor_recovered"; break;
+      case "TELEMETRY_STALE":
+        vehicle.activeAlerts.add("stale"); kind = "telemetry_stale"; break;
+      case "TELEMETRY_RECOVERED":
+        vehicle.activeAlerts.delete("stale"); kind = "telemetry_recovered"; break;
+      default: return;
     }
+
+    this.pushEvent({
+      id: alert.eventId,
+      t: alert.detectedAtMs,
+      vehicleId: alert.vehicleId,
+      kind,
+      detail,
+    });
     this.scheduleNotify();
   }
 
@@ -292,11 +356,16 @@ class TelemetryStore {
   }
 
   private pushEvent(e: FleetEvent): void {
+    if (this.eventIds.has(e.id)) return;
     // 같은 사건이 연속 프레임에서 반복 발화하는 것을 막는다.
     const last = this.events[0];
     if (last && last.vehicleId === e.vehicleId && last.kind === e.kind && e.t - last.t < 500) return;
+    this.eventIds.add(e.id);
     this.events.unshift(e);
-    if (this.events.length > EVENT_CAPACITY) this.events.pop();
+    if (this.events.length > EVENT_CAPACITY) {
+      const removed = this.events.pop();
+      if (removed) this.eventIds.delete(removed.id);
+    }
   }
 
   private tickThroughput(): void {
@@ -319,7 +388,7 @@ class TelemetryStore {
     if (this.notifyScheduled) return;
     this.notifyScheduled = true;
     // 4Hz. 사람 눈에 카운터가 부드럽게 보이는 최소치이고, 도착률(40Hz)의 1/10이다.
-    window.setTimeout(() => {
+    globalThis.setTimeout(() => {
       this.notifyScheduled = false;
       this.version += 1;
       for (const l of this.listeners) l();

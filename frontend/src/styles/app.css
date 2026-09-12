@@ -196,8 +196,10 @@ body {
   border-radius: 5px; border: 1px solid var(--line);
 }
 .ev-harsh .feed-kind { color: var(--alarm); border-color: var(--line-strong); background: transparent; }
-.ev-low .feed-kind { color: var(--warn); border-color: var(--line-strong); background: transparent; }
 .ev-drop .feed-kind { color: var(--warn); border-color: var(--line-strong); background: transparent; }
+.ev-odd .feed-kind { color: var(--warn); border-color: var(--line-strong); background: transparent; }
+.ev-critical .feed-kind { color: var(--alarm); border-color: var(--alarm); background: transparent; }
+.ev-recovered .feed-kind { color: var(--ok); border-color: var(--line-strong); background: transparent; }
 .ev-epoch .feed-kind { color: var(--text-3); }
 .feed-body { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .feed-body b { color: var(--text); }
@@ -335,7 +337,7 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-
 .maplibregl-ctrl-attrib { background: rgba(13,15,19,0.75) !important; font-size: 9px !important; }
 .maplibregl-ctrl-attrib a { color: var(--text-3) !important; }
 
-/* ── 인지 객체 범례·팝업 ─────────────────────── */
+/* ── 객체 메타데이터 범례·팝업 ───────────────── */
 .legend {
   position: absolute; right: 10px; bottom: 10px;
   display: flex; flex-direction: column; gap: 3px;
