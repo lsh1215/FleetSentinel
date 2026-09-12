@@ -10,23 +10,17 @@ import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
 
 /**
- * 차량별 중복 제거. <b>이 잡에서 keyed state를 쓰는 유일한 곳</b>이다.
+ * 차량별 시퀀스 윈도우로 중복을 제거한다.
  *
- * <p>{@code keyBy(vehicle_id)}가 앞에 있으므로 같은 차량의 레코드는 항상 같은 태스크로
- * 오고, {@link ValueState}가 그 차량만의 비트맵을 들고 있다. Kafka 파티션 키도
- * {@code vehicle_id}라 <b>셔플이 없다</b>.
+ * 앞에 keyBy(vehicle_id) 가 있어 같은 차량은 항상 같은 태스크로 오고, ValueState 가
+ * 그 차량만의 비트맵을 들고 있다.
  *
- * <h2>왜 게이트웨이가 아니라 여기인가</h2>
+ * 게이트웨이가 아니라 여기인 이유는, 게이트웨이에 두면 인스턴스가 죽을 때 상태가 같이
+ * 사라져 중복이 저장 계층까지 그대로 들어가기 때문이다. Flink 상태는 체크포인트로 살아난다.
  *
- * <p>게이트웨이에 두면 인스턴스가 죽을 때 상태가 함께 사라져 중복이 그대로 저장 계층까지
- * 유입된다. Flink 상태는 체크포인트로 복구된다.
- *
- * <h2>이 연산자가 못 막는 것</h2>
- *
- * <p><b>Flink→ClickHouse 구간의 중복은 여기서 안 잡힌다.</b> 체크포인트 복구 시 이 상태도
- * 함께 되감기므로, 재생되는 레코드를 "처음 보는 것"으로 통과시킨다. 그 구간은
- * {@code ReplacingMergeTree} 멱등 upsert가 흡수한다(SDD L-14) — 두 장치가 서로 다른
- * 구멍을 닫는다.
+ * 못 막는 것도 있다. Flink→ClickHouse 구간의 중복은 여기서 안 잡힌다 — 체크포인트로
+ * 복구하면 이 상태도 같이 되감겨서, 다시 흘러온 레코드를 처음 보는 것으로 통과시킨다.
+ * 그 구간은 ReplacingMergeTree 가 흡수한다. 두 장치가 서로 다른 구멍을 막는다.
  */
 public class DedupFunction extends KeyedProcessFunction<String, Envelope, Envelope> {
 
@@ -47,6 +41,8 @@ public class DedupFunction extends KeyedProcessFunction<String, Envelope, Envelo
 
     @Override
     public void open(OpenContext openContext) {
+        // 키(차량) 하나마다 값 하나를 들고 있는 상태. 이름("seq-window")으로 식별하므로
+        // 재배포해도 같은 이름이면 예전 값을 이어받는다.
         state = getRuntimeContext().getState(
                 new ValueStateDescriptor<>("seq-window", SeqWindow.class));
 
@@ -54,8 +50,8 @@ public class DedupFunction extends KeyedProcessFunction<String, Envelope, Envelo
         accepted = group.counter("accepted");
         duplicate = group.counter("duplicate");
         late = group.counter("late");
-        // too_old 는 **유실일 수 있다** — 윈도우 밖으로 밀려난 뒤 도착한 것이므로.
-        // 이 지표가 0이 아니면 윈도우를 키우거나 지연 원인을 봐야 한다.
+        // too_old 는 유실일 수 있다 — 윈도우 밖으로 밀려난 뒤에 도착한 것이라서다.
+        // 0이 아니면 윈도우를 키우거나 지연 원인을 봐야 한다.
         tooOld = group.counter("too_old");
         bootReset = group.counter("boot_reset");
     }
@@ -63,12 +59,14 @@ public class DedupFunction extends KeyedProcessFunction<String, Envelope, Envelo
     @Override
     public void processElement(Envelope env, Context ctx, Collector<Envelope> out)
             throws Exception {
+        // 이 차량의 비트맵을 꺼낸다. 처음 보는 차량이면 null 이라 새로 만든다.
         SeqWindow w = state.value();
         if (w == null) {
             w = new SeqWindow(window);
         }
 
         Verdict verdict = w.accept(env.bootId(), env.seq());
+        // accept 가 w 를 바꿨으므로 다시 넣어 줘야 저장된다.
         state.update(w);
 
         switch (verdict) {

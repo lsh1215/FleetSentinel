@@ -9,11 +9,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Kafka 레코드 → {@link Envelope}. <b>페이로드는 열지 않는다.</b>
+ * Kafka 레코드를 Envelope 으로 감싼다. 페이로드는 아직 열지 않는다.
  *
- * <p>헤더가 없으면 게이트웨이가 쓴 것이 아니다. 조용히 통과시키면 신원 없는 레코드가
- * 파이프라인을 흐르므로 버리고 계수한다 — 이 단계에는 아직 DLQ 경로가 없다(side output은
- * ProcessFunction에서만 가능하다).
+ * 헤더가 없으면 게이트웨이가 쓴 레코드가 아니다. 그냥 통과시키면 신원 없는 레코드가
+ * 파이프라인을 흐르므로 버리고 로그만 남긴다 — 이 단계에는 아직 DLQ 경로가 없다.
+ * 곁가지 출력은 ProcessFunction 에서만 되기 때문이다.
  */
 public class EnvelopeDeserializer implements KafkaRecordDeserializationSchema<Envelope> {
 

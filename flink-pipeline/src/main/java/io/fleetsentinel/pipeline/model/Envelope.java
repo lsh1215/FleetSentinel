@@ -5,11 +5,11 @@ import java.nio.charset.StandardCharsets;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
- * Kafka 레코드 하나. <b>페이로드는 아직 열지 않는다.</b>
+ * Kafka 레코드 하나. 페이로드는 아직 열지 않는다.
  *
- * <p>신원 3튜플 {@code (vehicle_id, boot_id, seq)}은 게이트웨이가 헤더에 넣었고, 그 중
- * {@code vehicle_id}는 <b>클라이언트 인증서에서 나온 값</b>이다(SDD S-11). 페이로드 안의
- * 값을 믿지 않는다 — 두 벌이 있으면 어느 쪽을 믿느냐로 구멍이 열린다.
+ * 신원 3종 (vehicle_id, boot_id, seq)은 게이트웨이가 헤더에 넣은 것이고, 그중 vehicle_id 는
+ * 클라이언트 인증서에서 나온 값이다. 페이로드 안에 든 값은 믿지 않는다 — 두 벌이 있으면
+ * 어느 쪽을 믿느냐에 따라 구멍이 열린다.
  */
 public final class Envelope implements Serializable {
 
@@ -59,6 +59,7 @@ public final class Envelope implements Serializable {
                 record.value(), record.topic());
     }
 
+    /** 헤더 하나를 문자열로. 없으면 null. */
     private static String header(ConsumerRecord<byte[], byte[]> r, String key) {
         var h = r.headers().lastHeader(key);
         return h == null ? null : new String(h.value(), StandardCharsets.UTF_8);

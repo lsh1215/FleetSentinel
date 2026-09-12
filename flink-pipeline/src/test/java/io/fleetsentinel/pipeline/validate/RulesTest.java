@@ -12,7 +12,7 @@ import org.apache.avro.generic.GenericRecord;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** {@code data-design.md} §8.3 검증 규칙표를 그대로 확인한다. */
+/** Rules 가 물리적으로 불가능한 값을 실제로 걸러내는지 본다. */
 class RulesTest {
 
     private static Schema schema(String name) throws Exception {
@@ -74,11 +74,11 @@ class RulesTest {
     }
 
     @Test
-    @DisplayName("num_lidar_pts=0 은 버리지 않는다 — 라벨의 23.1%가 그렇다")
-    void unobservedLabelIsKept() throws Exception {
+    @DisplayName("num_lidar_pts=0 은 정상 값으로 유지한다")
+    void zeroLidarPointsIsKept() throws Exception {
         var r = perception();
         r.put("num_lidar_pts", 0);
-        // 저신뢰 플래그로 분류할 뿐 DLQ로 보내지 않는다(§8.1).
+        // 거리나 가림 때문에 0일 수 있으므로 DLQ로 보내지 않는다.
         assertThat(Rules.checkPerception(r)).isEmpty();
     }
 

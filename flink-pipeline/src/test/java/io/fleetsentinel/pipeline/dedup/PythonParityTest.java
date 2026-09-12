@@ -13,13 +13,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Python {@code SeqDedup}과 Java {@code SeqWindow}가 <b>같은 판정</b>을 내는지 확인한다.
+ * Python SeqDedup 과 Java SeqWindow 가 같은 판정을 내는지 대조한다.
  *
- * <p>같은 알고리즘이 두 언어로 존재하므로(차량은 Python, Flink는 Java) 계약이 갈라지면
- * "재생기에서 검증했다"는 주장이 Flink에 적용되지 않는다. 그래서 무작위 시퀀스 3,000건에
- * 대한 Python 판정을 픽스처로 굳혀두고 Java가 같은 답을 내는지 대조한다.
- *
- * <p>픽스처 재생성은 {@code exploration}에서 한다 — 이 파일 상단 주석 참조.
+ * 같은 알고리즘이 두 언어로 있다(차량은 Python, Flink 는 Java). 둘이 갈라지면 재생기에서
+ * 검증한 결과를 Flink 에 적용할 수 없게 된다. 그래서 무작위 3,000건에 대한 Python 판정을
+ * 픽스처로 굳혀 두고 Java 가 같은 답을 내는지 본다.
  */
 class PythonParityTest {
 
