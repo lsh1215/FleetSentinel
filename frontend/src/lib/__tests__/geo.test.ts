@@ -99,7 +99,7 @@ describe("enuToWgs84", () => {
     expect(north[0]).toBeGreaterThan(o[0]);
   });
 
-  it("백엔드 구현과 같은 값을 낸다 — 어긋나면 차량과 인지 객체가 다른 위치에 찍힌다", () => {
+  it("백엔드 구현과 같은 값을 낸다 — 어긋나면 차량과 객체 메타데이터가 다른 위치에 찍힌다", () => {
     // exploration/fleetsentinel_ingest/geo.py 로 검증한 실제 ego_pose 좌표.
     // scene-0061 첫 프레임: ENU(411.30, 1180.89) → (1.29882, 103.78845)
     const p = enuToWgs84(411.3039349319818, 1180.8903791765097, "singapore-onenorth")!;

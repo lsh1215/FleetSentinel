@@ -1,11 +1,6 @@
 package io.fleetsentinel.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 import tools.jackson.databind.ObjectMapper;
 import io.fleetsentinel.api.query.TelemetryQueries;
 import io.fleetsentinel.api.web.QueryController;
@@ -13,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 /**
  * 응답 <b>JSON 형태</b>가 프론트 계약과 맞는지 고정한다.
@@ -26,7 +20,7 @@ import org.mockito.ArgumentCaptor;
  */
 class ContractTest {
 
-    private final TelemetryQueries queries = mock(TelemetryQueries.class);
+    private final StubQueries queries = new StubQueries();
     private final QueryController controller = new QueryController(queries);
     // Jackson 3 — Boot 4 기본. 패키지가 tools.jackson 으로 바뀌었다.
     private final ObjectMapper json = new ObjectMapper();
@@ -34,12 +28,12 @@ class ContractTest {
     @Test
     @DisplayName("/api/vehicles 는 { vehicles: [...] } 로 감싼다")
     void vehiclesShape() throws Exception {
-        when(queries.vehicles()).thenReturn(List.of(orderedMap(
+        queries.vehicles = List.of(orderedMap(
                 "vehicle_id", "vehicle-0001",
                 "scene_name", "scene-0061",
                 "location", "singapore-onenorth",
                 "duration_ms", 19500L,
-                "home", List.of(1.2988, 103.7884))));
+                "home", List.of(1.2988, 103.7884)));
 
         var node = json.valueToTree(controller.vehicles());
 
@@ -57,11 +51,11 @@ class ContractTest {
     @Test
     @DisplayName("/api/clips 는 배열을 그대로 준다 — 감싸지 않는다")
     void clipsShape() throws Exception {
-        when(queries.clips(anyInt())).thenReturn(List.of(orderedMap(
+        queries.clips = List.of(orderedMap(
                 "clip_id", "01K3ABC",
                 "vehicle_id", "vehicle-0001",
                 "blob_uri", "s3://fleet-raw/v1/…",
-                "duration_s", 19.2)));
+                "duration_s", 19.2));
 
         var node = json.valueToTree(controller.clips(100));
 
@@ -74,11 +68,11 @@ class ContractTest {
     @Test
     @DisplayName("/api/health 는 total_missing 을 낸다 — 결번이 곧 유실이다")
     void healthShape() throws Exception {
-        when(queries.health()).thenReturn(orderedMap(
+        queries.health = orderedMap(
                 "counts", Map.of("signals", 51025L),
                 "total_missing", 0L,
                 "vehicles", List.of(Map.of("vehicle_id", "vehicle-0001", "missing", 0L)),
-                "dup_pressure", List.of(Map.of("table", "signals", "pending_dupes", 0L))));
+                "dup_pressure", List.of(Map.of("table", "signals", "pending_dupes", 0L)));
 
         var node = json.valueToTree(controller.health());
 
@@ -91,12 +85,9 @@ class ContractTest {
     @Test
     @DisplayName("clips 의 limit 에 상한을 건다 — 무제한이면 브라우저가 먼저 무너진다")
     void clipsLimitIsCapped() {
-        when(queries.clips(anyInt())).thenReturn(List.of());
         controller.clips(999_999);
 
-        ArgumentCaptor<Integer> cap = ArgumentCaptor.forClass(Integer.class);
-        verify(queries).clips(cap.capture());
-        assertThat(cap.getValue()).isLessThanOrEqualTo(1000);
+        assertThat(queries.lastClipLimit).isLessThanOrEqualTo(1000);
     }
 
     /** {@code Map.of} 는 순서를 보장하지 않아 JSON 키 순서 확인에 부적합하다. */
@@ -106,5 +97,32 @@ class ContractTest {
             m.put((String) kv[i], kv[i + 1]);
         }
         return m;
+    }
+
+    private static final class StubQueries extends TelemetryQueries {
+        private List<Map<String, Object>> vehicles = List.of();
+        private List<Map<String, Object>> clips = List.of();
+        private Map<String, Object> health = Map.of();
+        private int lastClipLimit;
+
+        private StubQueries() {
+            super(null);
+        }
+
+        @Override
+        public List<Map<String, Object>> vehicles() {
+            return vehicles;
+        }
+
+        @Override
+        public List<Map<String, Object>> clips(int limit) {
+            lastClipLimit = limit;
+            return clips;
+        }
+
+        @Override
+        public Map<String, Object> health() {
+            return health;
+        }
     }
 }

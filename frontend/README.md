@@ -18,7 +18,7 @@
 ## 실행
 
 ```bash
-npm test           # 순수 로직 단위 테스트 26건 (픽스처 불필요)
+npm test           # 단위 테스트 (픽스처 불필요)
 npm install
 npm run dev        # http://localhost:5173
 npm run build      # 프로덕션 빌드
@@ -48,6 +48,7 @@ PYTHONPATH=. ./.venv/bin/python scripts/replay_rerun.py \
 | 엔드포인트 | 내용 |
 |---|---|
 | `GET /api/stream` | SSE. `event:`는 `signal`/`perception`/`epoch`, `id:`에 재생 커서(ms) |
+| `GET /api/alerts` | SSE. Flink의 ODD 전이 이벤트, `id:`는 안정적인 `eventId` |
 | `GET /api/vehicles` | 차량 로스터 |
 | `GET /api/clips` | 클립 카탈로그 (조건 태그 + `blob_uri`) |
 | `GET /api/health` | Kafka lag · DLQ · 체크포인트 · ISR |

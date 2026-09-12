@@ -9,11 +9,11 @@ import { telemetryStore } from "../lib/telemetryStore";
  * 2초 폴링으로 충분하다. 굳이 스트림에 실으면 대역폭만 쓰고 얻는 게 없다.
  */
 interface Health {
-  kafka_consumer_lag: number;
-  dlq_count: number;
-  checkpoint_ms: number;
-  checkpoint_failed: number;
-  brokers_in_sync: number;
+  kafka_consumer_lag?: number;
+  dlq_count?: number;
+  checkpoint_ms?: number;
+  checkpoint_failed?: number;
+  brokers_in_sync?: number;
 }
 
 export function PipelineHealth({ streamStatus }: { streamStatus: string }) {
@@ -73,13 +73,13 @@ export function PipelineHealth({ streamStatus }: { streamStatus: string }) {
         <div>
           <dt>체크포인트</dt>
           <dd>
-            {health ? `${health.checkpoint_ms}ms` : "—"}
+            {health?.checkpoint_ms != null ? `${health.checkpoint_ms}ms` : "—"}
             <span className="sub">실패 {health?.checkpoint_failed ?? "—"}</span>
           </dd>
         </div>
         <div>
           <dt>ISR</dt>
-          <dd>{health ? `${health.brokers_in_sync}/3` : "—"}</dd>
+          <dd>{health?.brokers_in_sync != null ? `${health.brokers_in_sync}/3` : "—"}</dd>
         </div>
       </dl>
     </div>
