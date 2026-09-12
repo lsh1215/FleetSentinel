@@ -25,7 +25,7 @@ interface Props {
   onSelect: (id: string) => void;
   /** 선택 차량을 화면 중앙에 유지한다. 끄면 자유 탐색. */
   follow: boolean;
-  /** 인지 객체 발자국을 지도에 투영한다. */
+  /** 객체 메타데이터의 발자국을 지도에 투영한다. */
   showObjects: boolean;
 }
 
@@ -113,7 +113,7 @@ export function FleetMap({ selectedId, onSelect, follow, showObjects }: Props) {
         },
       });
 
-      // ── 인지 객체 발자국 ────────────────────────────────────────────
+      // ── 객체 메타데이터 발자국 ──────────────────────────────────────
       // 자율주행 관제를 일반 fleet 관제와 구별하는 지점이다 — 차량이 **어디 있는지**가
       // 아니라 **무엇을 보고 있는지**를 보여준다. 3D 박스를 위에서 본 사각형으로 투영한다.
       map.addSource("objects", { type: "geojson", data: EMPTY });
@@ -125,9 +125,8 @@ export function FleetMap({ selectedId, onSelect, follow, showObjects }: Props) {
         minzoom: 14,
         paint: {
           "fill-color": ["get", "color"],
-          // 저신뢰(LiDAR 미관측) 객체는 거의 투명하게 — 지우지는 않는다.
-          // 23%가 그런 라벨이므로 숨기면 데이터를 오해하게 된다(§7.1).
-          "fill-opacity": ["case", ["get", "lowConf"], 0.06, 0.2],
+          // LiDAR 포인트가 없는 객체도 숨기지 않고 옅게 표시한다.
+          "fill-opacity": ["case", ["get", "noLidarPoints"], 0.06, 0.2],
         },
       });
       map.addLayer({
@@ -137,10 +136,10 @@ export function FleetMap({ selectedId, onSelect, follow, showObjects }: Props) {
         minzoom: 14,
         paint: {
           "line-color": ["get", "color"],
-          "line-width": ["case", ["get", "lowConf"], 0.6, 1.2],
-          // 저신뢰는 점선으로 — 색만으로 구분하면 색약에서 안 보인다.
-          "line-dasharray": ["case", ["get", "lowConf"], ["literal", [2, 2]], ["literal", [1, 0]]],
-          "line-opacity": ["case", ["get", "lowConf"], 0.45, 0.9],
+          "line-width": ["case", ["get", "noLidarPoints"], 0.6, 1.2],
+          // 센서 관측 여부를 점선으로도 구분해 색에만 의존하지 않는다.
+          "line-dasharray": ["case", ["get", "noLidarPoints"], ["literal", [2, 2]], ["literal", [1, 0]]],
+          "line-opacity": ["case", ["get", "noLidarPoints"], 0.45, 0.9],
         },
       });
 
@@ -264,21 +263,21 @@ export function FleetMap({ selectedId, onSelect, follow, showObjects }: Props) {
         },
       });
 
-      // 인지 객체 클릭 — 무엇을 근거로 그렇게 인지했는지 보여준다.
+      // 객체 메타데이터 클릭. 원본 주석에 포함된 관측 정보를 보여준다.
       // 관제에서 "저 박스가 왜 저기 있나"를 물을 수 있어야 한다.
       map.on("click", "object-fill", (e) => {
         const f = e.features?.[0];
         if (!f) return;
         const p = f.properties ?? {};
-        const lowConf = p["lowConf"] === true || p["lowConf"] === "true";
+        const noLidarPoints = p["noLidarPoints"] === true || p["noLidarPoints"] === "true";
         new maplibregl.Popup({ closeButton: false, className: "obj-popup", maxWidth: "220px" })
           .setLngLat(e.lngLat)
           .setHTML(
             `<div class="op-cat">${p["category"] ?? "?"}</div>` +
               `<div class="op-row"><span>LiDAR 포인트</span><b>${p["lidarPts"] ?? "?"}</b></div>` +
               `<div class="op-row"><span>가시성</span><b>${p["visibility"] ?? "?"}</b></div>` +
-              (lowConf
-                ? `<div class="op-warn">LiDAR 미관측 — 저신뢰 라벨</div>`
+              (noLidarPoints
+                ? `<div class="op-warn">박스 내부 LiDAR 포인트 없음</div>`
                 : ""),
           )
           .addTo(map);
@@ -319,7 +318,7 @@ export function FleetMap({ selectedId, onSelect, follow, showObjects }: Props) {
             heading: v.headingDeg,
             moving: v.speedMps > 0.5,
             selected,
-            alert: Math.abs(v.yawRate) > 0.35 || v.zeroLidarCount > 0,
+            alert: v.activeAlerts.size > 0,
           },
         });
         if (v.trail.length > 1) {
@@ -338,7 +337,7 @@ export function FleetMap({ selectedId, onSelect, follow, showObjects }: Props) {
           });
         }
 
-        // 인지 객체는 **선택 차량만** 그린다. 전 차량을 동시에 그리면 겹쳐서
+        // 객체 메타데이터는 **선택 차량만** 그린다. 전 차량을 동시에 그리면 겹쳐서
         // 어느 차가 무엇을 보는지 알 수 없고, 그게 이 뷰의 존재 이유다.
         if (showObjectsRef.current && selected && v.location) {
           for (const o of v.objects) {
@@ -351,7 +350,7 @@ export function FleetMap({ selectedId, onSelect, follow, showObjects }: Props) {
               geometry: { type: "Polygon", coordinates: [ring.map((p) => [p[0], p[1]])] },
               properties: {
                 color: classColor(o.category),
-                lowConf: o.lidarPts === 0,
+                noLidarPoints: o.lidarPts === 0,
                 category: o.category,
                 lidarPts: o.lidarPts,
                 visibility: o.visibility,
