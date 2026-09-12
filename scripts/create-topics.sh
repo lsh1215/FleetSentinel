@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FleetSentinel — Kafka 토픽 부트스트랩 (ADR-009: RF=3 / min.insync.replicas=2)
-# **토픽은 하나다.** 계층(신호·인지·참조)을 토픽으로 나누면 `seq` 단일 수열이 쪼개진다.
+# **원천 텔레메트리 토픽은 하나다.** 계층(신호·객체 메타데이터·참조)을 토픽으로 나누면 `seq` 단일 수열이 쪼개진다.
 #
 # `seq`는 차량별로 하나뿐이고(WAL이 발급, data-design.md §5.0) 결번이 곧 유실이다.
 # 계층별로 토픽을 나누면 그 수열이 토픽마다 조각나서
@@ -12,6 +12,7 @@
 #
 # telemetry.records : ①②③ 전부. 파티션 키 = vehicle_id, 계층은 kind 헤더
 # telemetry.dlq     : 검증 실패 격리 (dlq-envelope.avsc)
+# fleet.alerts      : Flink가 판정한 저빈도 전이 이벤트. 전체 순서와 SSE 재개를 위해 1파티션
 set -euo pipefail
 
 COMPOSE="${COMPOSE:-docker compose -f infra/docker-compose.yml}"
@@ -32,6 +33,7 @@ create_topic() {
 echo "== creating topics =="
 create_topic telemetry.records 3
 create_topic telemetry.dlq 3
+create_topic fleet.alerts 1
 
 echo "== topic list =="
 $COMPOSE exec -T kafka1 sh -c "$KT --list"

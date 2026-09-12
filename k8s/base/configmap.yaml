@@ -9,7 +9,9 @@ data:
   # (scripts/create-topics.sh 주석 · data-design.md §5.0).
   KAFKA_TOPIC_RECORDS: telemetry.records
   KAFKA_TOPIC_DLQ: telemetry.dlq
+  KAFKA_TOPIC_ALERTS: fleet.alerts
   KAFKA_BOOTSTRAP: kafka-0.kafka:9092,kafka-1.kafka:9092,kafka-2.kafka:9092
+  ODD_BOUNDS: singapore-onenorth=1.2980,1.2990,103.7882,103.7887;boston-seaport=42.3445,42.3518,-71.0507,-71.0341
   MINIO_ENDPOINT: http://minio:9000
   MINIO_BUCKET_RAW: fleet-raw
   CLICKHOUSE_URL: jdbc:ch://clickhouse:8123/fleet

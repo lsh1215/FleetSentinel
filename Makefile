@@ -1,9 +1,9 @@
 # FleetSentinel — 로컬 인프라 오케스트레이션
 # 사용: make up → make topics → make smoke   (절차는 RUN.md)
 #
-# 신호·인지 경로는 차량(WAL) → gRPC 게이트웨이 → Kafka 까지 이어져 있다:
+# 신호·객체 메타데이터 경로는 차량(WAL) → gRPC 게이트웨이 → Kafka 까지 이어져 있다:
 #   make up → make topics → make certs → make gateway → make ship
-# Flink→ClickHouse 구간은 아직 비어 있다(P3). 대시보드는 인프라 없이 돈다 — RUN.md §7.
+# Flink→ClickHouse와 실시간 알림 경로까지 구현돼 있다. 실행 순서는 RUN.md를 따른다.
 # 설계 = docs/sdd.md
 COMPOSE := docker compose -f infra/docker-compose.yml
 export COMPOSE
@@ -50,7 +50,7 @@ ha-demo: ## Kafka HA broker-kill 데모 (ADR-009, 별도 토픽 사용)
 	bash scripts/ha-demo.sh
 
 # ── 수집 게이트웨이 ────────────────────────────────────────────────────────
-# 개발용 사설 PKI다. 공개 CA는 vehicle-0042 같은 이름을 발급해주지 않는다(SDD S-11).
+# 개발용 사설 PKI다. 공개 CA는 vehicle-0042 같은 이름을 발급해주지 않는다(SDD S-9).
 # 제조 프로비저닝·로테이션·폐기는 스코프 밖 — SDD L-7.
 PKI ?= ./pki
 JAVA21 ?= $(shell /usr/libexec/java_home -v 21 2>/dev/null)
@@ -68,7 +68,7 @@ gateway: ## 게이트웨이 기동 (gRPC 9090 mTLS · 관리 HTTP 8082)
 	KAFKA_BOOTSTRAP=localhost:29092,localhost:29093,localhost:29094 \
 	$(JAVA21)/bin/java -jar gateway/target/gateway-0.1.0.jar
 
-ship: ## nuScenes 신호·인지 → WAL → 게이트웨이 → Kafka 종단 재생
+ship: ## nuScenes 신호·객체 메타데이터 → WAL → 게이트웨이 → Kafka 종단 재생
 	cd exploration && PYTHONPATH=. .venv/bin/python scripts/ship_to_gateway.py \
 	  --dataroot ../data/nuscenes --pki ../$(PKI) --vehicle vehicle-0001 --scenes 2
 
@@ -82,6 +82,8 @@ ship-segments: ## MCAP 클립 → MinIO(presigned) → segment-ref → Kafka
 
 # ── Flink 파이프라인 ───────────────────────────────────────────────────────
 FLINK_JAR := flink-pipeline/target/flink-pipeline-0.1.0.jar
+# nuScenes fixture의 지도 범위를 감싼 개발용 사각 경계다. 실제 ODD 정책이 아니다.
+ODD_BOUNDS ?= singapore-onenorth=1.2980,1.2990,103.7882,103.7887;boston-seaport=42.3445,42.3518,-71.0507,-71.0341
 
 ch-schema: ## ClickHouse 스키마 + FINAL 뷰 적용
 	$(COMPOSE) exec -T clickhouse clickhouse-client --user fleet --password fleet \
@@ -99,6 +101,7 @@ flink-submit: flink-build ## 잡을 클러스터에 제출
 	docker cp $(FLINK_JAR) fleet-jobmanager:/tmp/job.jar
 	$(COMPOSE) exec -T jobmanager flink run -d /tmp/job.jar \
 	  --bootstrap kafka1:9092 --topic telemetry.records \
+	  --alert-topic fleet.alerts --odd-bounds "$(ODD_BOUNDS)" \
 	  --clickhouse "jdbc:ch://clickhouse:8123/fleet" \
 	  --clickhouse-user fleet --clickhouse-password fleet
 
@@ -107,8 +110,9 @@ api-build: ## API JAR 빌드
 	cd api && JAVA_HOME=$(JAVA21) mvn -B -q package -DskipTests
 	@ls -la api/target/api-0.1.0.jar
 
-api: api-build ## API 기동 (:8080) — ClickHouse 질의 + SSE
+api: api-build ## API 기동 (:8080) — ClickHouse 질의 + telemetry/alert SSE
 	CLICKHOUSE_URL="jdbc:ch://localhost:8124/fleet" \
+	KAFKA_BOOTSTRAP_SERVERS="localhost:29092,localhost:29093,localhost:29094" \
 	$(JAVA21)/bin/java -jar api/target/api-0.1.0.jar
 
 dashboard: ## 대시보드를 **실 API** 로 띄운다 (VITE_API 없으면 목업)
@@ -124,7 +128,7 @@ verify-kafka: ## Kafka 적재분을 꺼내 Avro 디코딩 + 결번·채널 대�
 	cd exploration && PYTHONPATH=. .venv/bin/python scripts/verify_kafka.py \
 	  --boot-id $(BOOT) --vehicle vehicle-0001
 
-ship-impersonate: ## 사칭 시도 — PERMISSION_DENIED로 끊겨야 정상 (SDD S-11)
+ship-impersonate: ## 사칭 시도 — PERMISSION_DENIED로 끊겨야 정상 (SDD S-9)
 	@# 거절이 곧 성공이다. 재생기는 끊기면 1을 돌려주므로 여기서 뒤집는다 —
 	@# 통과해버리면 그때가 실패다.
 	@cd exploration && PYTHONPATH=. .venv/bin/python scripts/ship_to_gateway.py \

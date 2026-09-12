@@ -117,4 +117,8 @@ spec:
                   --config min.insync.replicas=2 \
                   --config unclean.leader.election.enable=false
               done
+              $KT --create --if-not-exists --topic fleet.alerts --partitions 1 \
+                --replication-factor 3 \
+                --config min.insync.replicas=2 \
+                --config unclean.leader.election.enable=false
               $KT --list

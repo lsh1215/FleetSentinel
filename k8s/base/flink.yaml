@@ -143,6 +143,12 @@ spec:
             - name: CLICKHOUSE_URL
               valueFrom:
                 configMapKeyRef: {name: fleet-config, key: CLICKHOUSE_URL}
+            - name: ALERT_TOPIC
+              valueFrom:
+                configMapKeyRef: {name: fleet-config, key: KAFKA_TOPIC_ALERTS}
+            - name: ODD_BOUNDS
+              valueFrom:
+                configMapKeyRef: {name: fleet-config, key: ODD_BOUNDS}
             - name: CH_USER
               valueFrom:
                 secretKeyRef: {name: fleet-secrets, key: CLICKHOUSE_USER}
@@ -157,6 +163,8 @@ spec:
               flink run -d -m flink-jobmanager:8081 /jobs/flink-pipeline.jar \
                 --bootstrap "$KAFKA_BOOTSTRAP" \
                 --topic telemetry.records \
+                --alert-topic "$ALERT_TOPIC" \
+                --odd-bounds "$ODD_BOUNDS" \
                 --clickhouse "$CLICKHOUSE_URL" \
                 --clickhouse-user "$CH_USER" \
                 --clickhouse-password "$CH_PASSWORD"
