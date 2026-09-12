@@ -16,7 +16,7 @@
         "name": "DlqErrorClass",
         "symbols": ["PARSE_FAILURE", "SCHEMA_VALIDATION_FAILURE", "BUSINESS_RULE_FAILURE", "SINK_WRITE_FAILURE"]
       },
-      "doc": "DLQ 분류 4종(SDD §6.7): PARSE_FAILURE=Avro 디코드 실패, SCHEMA_VALIDATION_FAILURE=필드 범위·필수값 위반, BUSINESS_RULE_FAILURE=미등록 vehicle_id 등 업무 규칙 위반, SINK_WRITE_FAILURE=Iceberg/ES 싱크 write 재시도 상한 초과(GCS dlq/es/ — pipeline_step으로 싱크 식별)."
+      "doc": "DLQ 분류 4종: PARSE_FAILURE=Avro 디코드 실패, SCHEMA_VALIDATION_FAILURE=필드 범위·필수값 위반, BUSINESS_RULE_FAILURE=미등록 vehicle_id 등 업무 규칙 위반, SINK_WRITE_FAILURE=Kafka/ClickHouse 쓰기 재시도 상한 초과."
     },
     {
       "name": "error_detail",
@@ -31,7 +31,7 @@
     {
       "name": "pipeline_step",
       "type": "string",
-      "doc": "실패가 발생한 Core Stream Job 처리 단계 식별자(예: decode, schema-validate, enrich, sink-iceberg/sink-es). 관측성(§10.2) 상관관계 키."
+      "doc": "실패가 발생한 Core Stream Job 처리 단계 식별자(예: decode, schema-validate, enrich, sink-clickhouse). 관측성 상관관계 키."
     },
     {
       "name": "processing_time",

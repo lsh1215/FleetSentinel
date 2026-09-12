@@ -8,7 +8,7 @@
   §2  원천 규모 — 장면 수·길이·차량·지역
   §3.1 ③ 원시 센서 — 채널별 형식·Hz·크기·대역폭, 키프레임/스윕 구성
   §3.2 ① 신호 — 채널별 Hz·크기·필드(채널 네이티브 기준)
-  §3.3 ② 인지 산출 — 키프레임 주기·객체 수·카테고리·품질 분포
+  §3.3 ② 객체 메타데이터 — 키프레임 주기·객체 수·카테고리·관측 정보 분포
   §7   품질 — LiDAR 미관측 비율, 시나리오 태그 희소성
 
 사용:
@@ -192,7 +192,7 @@ def measure_signals(nusc: NuScenes, can, n_scenes: int | None) -> Dict[str, Any]
 
 
 def measure_perception(nusc: NuScenes) -> Dict[str, Any]:
-    """§3.3 · §7.1 — 인지 산출과 라벨 품질."""
+    """§3.3 · §7.1 — 객체 메타데이터와 센서 포인트 통계."""
     total_s = sum(
         (nusc.get("sample", sc["last_sample_token"])["timestamp"]
          - nusc.get("sample", sc["first_sample_token"])["timestamp"]) / 1e6
@@ -335,7 +335,7 @@ def main() -> int:
     print(f"  결합형(SignalRecord) {sg['joined_n']:,}건 = 네이티브의 "
           f"{sg['joined_ratio']*100:.1f}%")
 
-    print(f"\n═══ §3.3 ② 인지 산출 ═══")
+    print(f"\n═══ §3.3 ② 객체 메타데이터 ═══")
     print(f"  키프레임 {p['n_keyframes']:,}개 · {p['keyframe_hz']:.2f} Hz "
           f"(평균 간격 {p['mean_interval_s']:.3f}초)")
     print(f"  키프레임당 객체: 평균 {p['objects_per_keyframe_mean']:.1f} / "

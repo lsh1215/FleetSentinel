@@ -9,7 +9,7 @@
     world/ego                  ego 차량 자세 (신호 계층)
     world/ego/<CAM_*>          카메라 6대 (Pinhole + JPEG)
     world/ego/LIDAR_TOP        LiDAR 포인트클라우드
-    world/objects              인지 3D 박스 (글로벌 프레임)
+    world/objects              객체 3D 박스 (글로벌 프레임)
     world/trajectory           누적 주행 궤적
     signals/*                  속도·조향각·yaw rate 시계열
 
@@ -180,7 +180,7 @@ def main() -> int:
 
     print(f"재생 로그 완료: {args.mcap.name}")
     print(f"  캘리브레이션 {stats['calib']}채널 · 신호 {stats['signal']} · "
-          f"인지객체 {stats['perception']} · 카메라 {stats['camera']} · LiDAR {stats['lidar']}")
+          f"객체 메타데이터 {stats['perception']} · 카메라 {stats['camera']} · LiDAR {stats['lidar']}")
     if args.out:
         size = args.out.stat().st_size / 1e6
         print(f"  → {args.out} ({size:.1f}MB)")

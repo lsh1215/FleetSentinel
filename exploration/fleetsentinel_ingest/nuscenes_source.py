@@ -2,7 +2,7 @@
 
 계층 정의는 docs/data-design.md §3–§4:
   ① 신호(signal)        — ego_pose + CAN bus, 수십 KB/s
-  ② 인지 산출(perception) — 3D 박스, 키프레임 2Hz
+  ② 객체 메타데이터(perception) — 3D 박스, 키프레임 2Hz
   ③ 원시 센서(raw)       — 카메라/LiDAR/레이더, ~27.5 MB/s → Claim-Check 대상
 
 CAN bus 확장은 별도 다운로드다(mini 기본 포함 아님 — R-V3-3). 없으면 신호 계층은
@@ -55,7 +55,7 @@ class SignalRecord:
 
 @dataclass(frozen=True, slots=True)
 class PerceptionRecord:
-    """② 인지 산출 1건 — schemas/perception-object.avsc 대응."""
+    """② 객체 메타데이터 1건 — schemas/perception-object.avsc 대응."""
 
     event_id: str
     scene_id: str
@@ -342,7 +342,7 @@ def extract_scene(
             )
 
     for sample in _iter_samples(nusc, scene):
-        # --- ② 인지 산출: 이 키프레임의 3D 박스 ---
+        # --- ② 객체 메타데이터: 이 키프레임의 3D 박스 ---
         for ann_token in sample["anns"]:
             ann = nusc.get("sample_annotation", ann_token)
             attrs = [nusc.get("attribute", a)["name"] for a in ann["attribute_tokens"]]

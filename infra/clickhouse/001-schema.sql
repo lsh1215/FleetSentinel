@@ -49,7 +49,7 @@ PARTITION BY toYYYYMMDD(sensor_time)
 TTL toDateTime(sensor_time) + INTERVAL 10 YEAR;
 
 -- ────────────────────────────────────────────────────────────────────────
--- ② 인지 산출 (perception-object.avsc)
+-- ② 객체 메타데이터 (perception-object.avsc)
 -- ────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS fleet.perception_raw
 (
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS fleet.perception_raw
     rot_y         Float64,
     rot_z         Float64,
 
-    -- 품질 축. num_lidar_pts=0 이 23.1% 이고 큐레이션 1급 축이다(data-design.md §8.1).
+    -- 원본 관측 메타데이터. 0은 거리나 가림 때문에 정상적으로 발생할 수 있다.
     visibility    LowCardinality(String),
     num_lidar_pts Int32,
     num_radar_pts Int32,

@@ -23,7 +23,7 @@ from fleetsentinel_ingest.wal import KIND_SEGMENT_REF, KIND_SIGNAL
 class TestKindMapping:
     """proto3는 enum 0을 UNSPECIFIED로 예약하므로 WAL kind와 값이 어긋난다.
 
-    매핑이 한 곳에만 있어야 하고, 그 한 곳이 정확해야 한다. 어긋나면 신호가 인지
+    매핑이 한 곳에만 있어야 하고, 그 한 곳이 정확해야 한다. 어긋나면 신호가 객체 메타데이터
     토픽으로 가는 종류의 오류가 되고 하류에서 찾기 어렵다.
     """
 

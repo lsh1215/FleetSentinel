@@ -67,7 +67,7 @@ def main() -> int:
         print(
             f"  [{i+1}/{len(scenes)}] {scene['name']} → {out_path.name}  "
             f"{mb:7.1f}MB  veh={vehicle_id}  "
-            f"신호 {meta['n_signals']:>4} · 인지 {meta['n_perception']:>4} · "
+            f"신호 {meta['n_signals']:>4} · 객체 메타데이터 {meta['n_perception']:>4} · "
             f"원시 {meta['n_raw']:>5} (키프레임 {meta['n_raw_keyframe']}, 스윕 {meta['n_raw_sweep']})"
         )
 
