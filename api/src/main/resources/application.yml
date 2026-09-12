@@ -12,6 +12,16 @@ spring:
       maximum-pool-size: 8
       connection-timeout: 10000
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092,localhost:29093,localhost:29094}
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
+
 server:
   port: ${API_PORT:8080}
 
@@ -29,6 +39,13 @@ fleetsentinel:
     # 한 번에 밀어 넣을 신호 레코드 수 상한. 초당 1,308건이 들어오므로
     # 무제한이면 브라우저가 먼저 무너진다.
     max-records-per-push: 200
+  alerts:
+    topic: ${ALERT_TOPIC:fleet.alerts}
+    # SSE는 서버마다 접속자가 다르므로 API 인스턴스끼리 파티션을 나누면 안 된다.
+    # 인스턴스별 그룹으로 같은 저빈도 알림을 모두 읽고 Kafka retention에서 버퍼를 복원한다.
+    consumer-group: ${ALERT_CONSUMER_GROUP:fleetsentinel-api-${random.uuid}}
+    replay-capacity: ${ALERT_REPLAY_CAPACITY:1000}
+    heartbeat-ms: ${ALERT_HEARTBEAT_MS:15000}
 
 logging:
   level:
