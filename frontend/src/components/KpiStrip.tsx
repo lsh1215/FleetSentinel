@@ -11,9 +11,9 @@ import { telemetryStore } from "../lib/telemetryStore";
  * 1초 주기로 읽는다. 저장소가 자체 계측한 값을 그대로 표시하므로 계산 비용이 없다.
  */
 interface Health {
-  kafka_consumer_lag: number;
-  dlq_count: number;
-  brokers_in_sync: number;
+  kafka_consumer_lag?: number;
+  dlq_count?: number;
+  brokers_in_sync?: number;
 }
 
 export function KpiStrip() {
@@ -43,17 +43,17 @@ export function KpiStrip() {
     };
   }, []);
 
-  const dlq = health?.dlq_count ?? 0;
-  const isr = health?.brokers_in_sync ?? 0;
+  const dlq = health?.dlq_count;
+  const isr = health?.brokers_in_sync;
 
   return (
     <div className="kpi">
       <Item k="active" v={String(vehicles)} unit="veh" />
       <Item k="ingest" v={tp.rec.toLocaleString()} unit="rec/s" />
       <Item k="batch" v={String(tp.batch)} unit="/s" />
-      <Item k="lag" v={health ? String(health.kafka_consumer_lag) : "—"} unit="" />
-      <Item k="dlq" v={String(dlq)} unit="" state={dlq > 0 ? "alarm" : undefined} />
-      <Item k="isr" v={health ? `${isr}/3` : "—"} unit="" state={health && isr < 3 ? "warn" : undefined} />
+      <Item k="lag" v={health?.kafka_consumer_lag != null ? String(health.kafka_consumer_lag) : "—"} unit="" />
+      <Item k="dlq" v={dlq != null ? String(dlq) : "—"} unit="" state={dlq != null && dlq > 0 ? "alarm" : undefined} />
+      <Item k="isr" v={isr != null ? `${isr}/3` : "—"} unit="" state={isr != null && isr < 3 ? "warn" : undefined} />
     </div>
   );
 }
